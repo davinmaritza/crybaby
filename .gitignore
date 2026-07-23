@@ -1,0 +1,7 @@
+# Database
+*.db
+cyrbaby.db
+
+# Temp / Scratch
+scratch/
+*.log

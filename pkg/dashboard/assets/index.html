@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryBaby by Suzirz</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-container" class="login-wrapper">
+        <div class="login-box">
+            <h1 style="margin: 0; color: #fff;">CryBaby</h1>
+            <p style="color: #bbb; margin-top: 5px; font-size: 13px;">by Suzirz</p>
+            <form id="login-form">
+                <div style="margin-top: 20px; text-align: left;">
+                    <label for="password" style="display: block; margin-bottom: 5px; font-size: 12px; color: #ddd;">Password</label>
+                    <input type="password" id="password" required autocomplete="off" style="width: 100%; padding: 8px; box-sizing: border-box; background: #333; border: 1px solid #555; color: white;">
+                </div>
+                <button type="submit" style="width: 100%; margin-top: 15px; padding: 10px; background: #2196F3; color: white; border: none; cursor: pointer;">Login</button>
+                <div id="login-error" style="color: #ff5252; margin-top: 10px; font-size: 13px; text-align: center;"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard-container" class="hidden">
+        <!-- Topbar -->
+        <div class="topbar">
+            <div class="logo">CryBaby <span style="color: #888; font-weight: 400; font-size: 12px;">by Suzirz</span></div>
+            <div class="topbar-right">
+                <span id="connection-status">Connecting...</span>
+                <button id="btn-logout" class="btn-secondary">Logout</button>
+            </div>
+        </div>
+        
+        <div class="main-layout">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="nav-tree">
+                    <div class="nav-item active" data-target="fleet-section">
+                        <span class="icon">🖥️</span> Datacenter
+                    </div>
+                    <div class="nav-item" data-target="clusters-section">
+                        <span class="icon">📁</span> Clusters
+                    </div>
+                    <div class="nav-item" data-target="audit-section">
+                        <span class="icon">📋</span> Audit Log
+                    </div>
+                </div>
+
+                <!-- AI Agent Widget -->
+                <div class="ai-widget">
+                    <div class="ai-header">Gemini AI Agent</div>
+                    <div id="ai-messages" class="ai-messages">
+                        <div style="color: #aaa;">Ready to analyze global resources.</div>
+                    </div>
+                    <form id="ai-form" style="display: flex; margin-top: 5px;">
+                        <input type="text" id="ai-input" placeholder="Prompt..." style="flex: 1; padding: 5px; background: #333; border: 1px solid #555; color: white;">
+                        <button type="submit" style="padding: 5px 10px; background: #444; color: white; border: 1px solid #555;">Send</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                
+                <!-- Fleet Sections -->
+                <div id="fleet-section" class="tab-content active">
+                    <h2 class="page-title">Datacenter Summary</h2>
+
+                    <!-- Dashboard Widgets -->
+                    <div class="widget-grid">
+                        <!-- Health -->
+                        <div class="widget">
+                            <div class="widget-title">Health</div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px;">
+                                <div style="text-align: center;">
+                                    <div style="font-size: 40px; color: #4caf50;">✓</div>
+                                    <div style="font-size: 12px; color: #aaa;">Status</div>
+                                </div>
+                                <div>
+                                    <div style="margin-bottom: 5px;"><span style="color: #4caf50;">✔ Online:</span> <span id="kpi-online">0</span></div>
+                                    <div><span style="color: #ff5252;">✖ Offline:</span> <span id="kpi-offline">0</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Resources Gauge (CPU) -->
+                        <div class="widget">
+                            <div class="widget-title">CPU Usage</div>
+                            <div class="gauge-container">
+                                <svg viewBox="0 0 100 50" class="gauge">
+                                    <path class="gauge-bg" d="M10,50 A40,40 0 0,1 90,50" />
+                                    <path class="gauge-fill" id="gauge-cpu" d="M10,50 A40,40 0 0,1 90,50" stroke-dasharray="0 126" />
+                                </svg>
+                                <div class="gauge-value" id="val-cpu">0%</div>
+                                <div class="gauge-label" id="lbl-cpu">of 0 CPU(s)</div>
+                            </div>
+                        </div>
+
+                        <!-- Resources Gauge (RAM) -->
+                        <div class="widget">
+                            <div class="widget-title">Memory Usage</div>
+                            <div class="gauge-container">
+                                <svg viewBox="0 0 100 50" class="gauge">
+                                    <path class="gauge-bg" d="M10,50 A40,40 0 0,1 90,50" />
+                                    <path class="gauge-fill" id="gauge-ram" d="M10,50 A40,40 0 0,1 90,50" stroke-dasharray="0 126" stroke="#2196F3" />
+                                </svg>
+                                <div class="gauge-value" id="val-ram">0%</div>
+                                <div class="gauge-label" id="lbl-ram">0 GiB of 0 GiB</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pending -->
+                    <div id="pending-panel" class="hidden widget" style="margin-top: 20px; border-top: 3px solid #ff9800;">
+                        <div class="widget-title" style="color: #ff9800;">Pending Approvals</div>
+                        <div id="pending-list" style="padding: 10px;"></div>
+                    </div>
+
+                    <!-- Servers Table -->
+                    <div class="widget" style="margin-top: 20px;">
+                        <div class="widget-title" style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Nodes</span>
+                            <input type="text" id="search-input" placeholder="Search..." style="padding: 4px; background: #333; border: 1px solid #555; color: white;">
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table class="pve-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 30px;">ID</th>
+                                        <th>Online</th>
+                                        <th>Name</th>
+                                        <th>Cluster</th>
+                                        <th>CPU usage</th>
+                                        <th>Memory usage</th>
+                                        <th>Uptime</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="server-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Clusters -->
+                <div id="clusters-section" class="tab-content hidden">
+                    <h2 class="page-title">Cluster Management</h2>
+                    
+                    <div class="widget" style="margin-bottom: 20px; max-width: 500px;">
+                        <div class="widget-title">Create Cluster</div>
+                        <form id="create-cluster-form" style="padding: 10px; display: flex; flex-direction: column; gap: 10px;">
+                            <input type="text" id="cluster-name" required placeholder="Cluster Name" style="padding: 6px; background: #333; border: 1px solid #555; color: white;">
+                            <input type="text" id="cluster-desc" placeholder="Description" style="padding: 6px; background: #333; border: 1px solid #555; color: white;">
+                            <button type="submit" class="btn-primary" style="align-self: flex-start;">Create</button>
+                        </form>
+                    </div>
+
+                    <div class="widget">
+                        <div class="widget-title">Clusters</div>
+                        <table class="pve-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                    <th>Servers</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clusters-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Audit Log -->
+                <div id="audit-section" class="tab-content hidden">
+                    <h2 class="page-title">Task History (Audit Log)</h2>
+                    <div class="widget">
+                        <div class="widget-title">
+                            <button id="refresh-audit-btn" style="padding: 2px 8px; background: #444; border: 1px solid #555; color: white; cursor: pointer;">Refresh</button>
+                        </div>
+                        <table class="pve-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Node</th>
+                                    <th>User</th>
+                                    <th>Command</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="file-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="file-server-name" style="margin:0; font-size: 14px;">File Download</h3>
+                <button id="close-file-btn" class="close-btn">✖</button>
+            </div>
+            <div style="padding: 15px;">
+                <p style="color: #aaa; margin: 0 0 10px 0; font-size: 12px;">Enter the absolute path of the file you want to download from the remote server.</p>
+                <form id="file-download-form" style="display: flex; gap: 8px;">
+                    <input type="text" id="dl-path" style="flex: 1; padding: 8px; background: #333; border: 1px solid #555; color: white; font-family: monospace;" placeholder="e.g. C:\Users\user\file.txt or /home/user/file">
+                    <button type="submit" class="btn-primary">Download</button>
+                </form>
+                <div id="file-progress" style="margin-top: 10px; color: #2196F3; font-size: 12px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="terminal-modal" class="modal hidden">
+        <div class="modal-content" style="width: 85%; max-width: 900px; height: 80vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h3 id="term-server-name" style="margin:0; font-size: 14px;">Shell</h3>
+                <button id="close-terminal-btn" class="close-btn">✖</button>
+            </div>
+            <div id="term-output" style="flex: 1; overflow-y: auto; background: #000; color: #0f0; padding: 10px; font-family: monospace; font-size: 13px; white-space: pre-wrap;"></div>
+            <form id="term-form" style="padding: 8px 10px; background: #111; border-top: 1px solid #333; display: flex; align-items: center; gap: 8px;">
+                <span style="color: #0f0; font-family: monospace; white-space: nowrap;">root@node:~#</span>
+                <input type="text" id="term-input" style="flex: 1; background: transparent; border: none; color: white; outline: none; font-family: monospace; font-size: 13px;" autocomplete="off" placeholder="Enter command...">
+                <button type="submit" style="background: #333; border: 1px solid #555; color: white; padding: 4px 10px; cursor: pointer; font-family: monospace;">Run</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Backdrop -->
+    <div id="modal-backdrop" class="modal-backdrop hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

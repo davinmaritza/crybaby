@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryBaby — Operations Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="login-container" class="login-wrapper">
+        <div class="login-card">
+            <h1 class="logo-text">CRYBABY</h1>
+            <p class="subtitle">FLEET REMOTE MANAGEMENT PLATFORM</p>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="password">ACCESS CODE</label>
+                    <input type="password" id="password" required placeholder="••••••••••••" autofocus>
+                </div>
+                <button type="submit" class="btn-submit">ESTABLISH CONNECTION</button>
+                <div id="login-error" class="error-msg"></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard-container" class="dashboard-wrapper hidden">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <h1 class="logo-text">CRYBABY</h1>
+                <span class="badge-live">OPS ROOM</span>
+            </div>
+            
+            <nav class="nav-links">
+                <button class="nav-btn active" data-target="fleet-section">
+                    <span class="icon">⛃</span> FLEET MAP & DEVICES
+                </button>
+                <button class="nav-btn" data-target="clusters-section">
+                    <span class="icon">☍</span> CLUSTER CONFIG
+                </button>
+                <button class="nav-btn" data-target="audit-section">
+                    <span class="icon">☳</span> COMMAND AUDIT LOG
+                </button>
+            </nav>
+
+            <!-- AI Chat Console -->
+            <div class="ai-console">
+                <div class="ai-header">
+                    <span class="ai-status"></span>
+                    <h3>CLAUDE FLEET AGENT</h3>
+                </div>
+                <div class="ai-messages" id="ai-messages">
+                    <div class="msg ai">Ready for natural language fleet operations. Try: "Show me VPS with high memory use" or "Run ipconfig on all VPS".</div>
+                </div>
+                <form id="ai-form" class="ai-input-form">
+                    <input type="text" id="ai-input" placeholder="Instruct Claude..." autocomplete="off">
+                    <button type="submit">➔</button>
+                </form>
+            </div>
+
+            <div class="sidebar-footer">
+                <button id="btn-logout" class="btn-secondary">DISCONNECT</button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header Status Summary -->
+            <header class="top-header">
+                <div class="title-area">
+                    <h2 id="section-title">FLEET OVERVIEW</h2>
+                    <p class="subtitle" id="connection-status">CONNECTED TO COMMAND CENTER BACKEND</p>
+                </div>
+                
+                <!-- Cluster Selector -->
+                <div class="filter-area">
+                    <label for="cluster-filter">CLUSTER VIEW:</label>
+                    <select id="cluster-filter">
+                        <option value="all">ALL FLEET SECTORS</option>
+                        <option value="unassigned">UNASSIGNED SECTOR</option>
+                    </select>
+                </div>
+            </header>
+
+            <!-- KPI Cards Strip -->
+            <section class="kpi-strip">
+                <div class="kpi-card">
+                    <div class="kpi-val text-teal" id="kpi-online">0</div>
+                    <div class="kpi-label">ONLINE SERVERS</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-val text-red" id="kpi-offline">0</div>
+                    <div class="kpi-label">OFFLINE SERVERS</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-val text-amber" id="kpi-pending">0</div>
+                    <div class="kpi-label">PENDING APPROVAL</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-val" id="kpi-specs">0c / 0t</div>
+                    <div class="kpi-label">TOTAL FLEET RESOURCE (CORES/THREADS)</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-val" id="kpi-resources">0 GB RAM</div>
+                    <div class="kpi-label">TOTAL FLEET MEMORY</div>
+                </div>
+            </section>
+
+            <!-- Fleet Sections -->
+            <div id="fleet-section" class="tab-content active">
+                <!-- Fleet Core Map (Signature Grid) -->
+                <section class="core-map-container">
+                    <div class="section-header">
+                        <h3>FLEET CORE MAP (1 CELL = 1 CPU THREAD)</h3>
+                        <span class="legend">
+                            <span class="leg-item"><span class="leg-color bg-teal"></span> Idle (&lt;50%)</span>
+                            <span class="leg-item"><span class="leg-color bg-amber"></span> Load (50-80%)</span>
+                            <span class="leg-item"><span class="leg-color bg-red"></span> Warning (&gt;80%)</span>
+                            <span class="leg-item"><span class="leg-color bg-gray"></span> Offline</span>
+                        </span>
+                    </div>
+                    <div class="core-map-grid" id="core-map-grid">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </section>
+
+                <!-- Pending Approval Panel -->
+                <section id="pending-panel" class="pending-approval-panel hidden">
+                    <h3 class="text-amber">🆕 PENDING DEVICE AUTHENTICATION</h3>
+                    <div class="pending-list" id="pending-list">
+                        <!-- Loaded dynamically -->
+                    </div>
+                </section>
+
+                <!-- Active Servers Table -->
+                <section class="server-table-container">
+                    <div class="section-header">
+                        <h3>ACTIVE FLEET REGISTRY</h3>
+                        <div class="table-actions">
+                            <input type="text" id="search-input" placeholder="Search servers...">
+                        </div>
+                    </div>
+                    <table class="server-table">
+                        <thead>
+                            <tr>
+                                <th>STATUS</th>
+                                <th>IDENTIFIER / CUSTOM NAME</th>
+                                <th>CLUSTER</th>
+                                <th>SPECS (OS / CPU / RAM / DISK)</th>
+                                <th>CPU LOAD</th>
+                                <th>RAM USED</th>
+                                <th>UPTIME</th>
+                                <th>ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="server-table-body">
+                            <!-- Loaded dynamically -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
+            <!-- Clusters Config Section -->
+            <div id="clusters-section" class="tab-content">
+                <section class="cluster-management-container">
+                    <div class="cluster-controls">
+                        <h3>CREATE NEW FLEET SECTOR (CLUSTER)</h3>
+                        <form id="create-cluster-form">
+                            <div class="form-row">
+                                <input type="text" id="cluster-name" required placeholder="Sector Name (e.g. Bandung-DC)">
+                                <input type="text" id="cluster-desc" placeholder="Description/Location">
+                                <button type="submit" class="btn-primary">CREATE SECTOR</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="section-header mt-4">
+                        <h3>CURRENT SECTORS</h3>
+                    </div>
+                    <table class="server-table">
+                        <thead>
+                            <tr>
+                                <th>SECTOR NAME</th>
+                                <th>DESCRIPTION</th>
+                                <th>SERVER COUNT</th>
+                                <th>ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="clusters-table-body">
+                            <!-- Loaded dynamically -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+
+            <!-- Command Audit Logs Section -->
+            <div id="audit-section" class="tab-content">
+                <section class="audit-logs-container">
+                    <div class="section-header">
+                        <h3>AUDIT LOGS — REMOTE OPERATIONS</h3>
+                    </div>
+                    <table class="server-table">
+                        <thead>
+                            <tr>
+                                <th>LOG ID</th>
+                                <th>SERVER</th>
+                                <th>OPERATOR</th>
+                                <th>COMMAND</th>
+                                <th>RESULT PREVIEW</th>
+                                <th>TIME STAMP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-table-body">
+                            <!-- Loaded dynamically -->
+                        </tbody>
+                    </table>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Server Detail Drawer -->
+    <div id="server-drawer" class="drawer">
+        <div class="drawer-overlay"></div>
+        <div class="drawer-content">
+            <div class="drawer-header">
+                <h2 id="drawer-server-name">SERVER DETAILED VIEW</h2>
+                <button class="btn-close" id="btn-close-drawer">✖</button>
+            </div>
+            <div class="drawer-body" id="drawer-body-content">
+                <!-- Loaded dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Terminal Exec Modal -->
+    <div id="terminal-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="terminal-title">SHELL CONSOLE</h2>
+                <button class="btn-close" id="btn-close-terminal">✖</button>
+            </div>
+            <div class="modal-body">
+                <div class="terminal-output" id="terminal-output"></div>
+                <form id="terminal-form" class="terminal-input-form">
+                    <span class="prompt">PS C:\&gt;</span>
+                    <input type="text" id="terminal-input" placeholder="Type powershell command..." autocomplete="off">
+                    <button type="submit">EXEC</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- File Manager Modal -->
+    <div id="file-modal" class="modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="file-title">FILE TRANSFER MODULE</h2>
+                <button class="btn-close" id="btn-close-file">✖</button>
+            </div>
+            <div class="modal-body">
+                <div class="file-split-view">
+                    <!-- File Download -->
+                    <div class="file-card">
+                        <h3>DOWNLOAD FILE FROM AGENT</h3>
+                        <form id="file-download-form">
+                            <div class="form-group">
+                                <label for="dl-path">ABSOLUTE PATH ON AGENT</label>
+                                <input type="text" id="dl-path" required placeholder="C:\inetpub\logs\LogFiles\W3SVC1\u_ex260723.log">
+                            </div>
+                            <button type="submit" class="btn-primary">DOWNLOAD FILE</button>
+                        </form>
+                    </div>
+
+                    <!-- File Upload -->
+                    <div class="file-card">
+                        <h3>UPLOAD FILE TO AGENT</h3>
+                        <form id="file-upload-form">
+                            <div class="form-group">
+                                <label for="ul-path">DESTINATION ABSOLUTE PATH ON AGENT</label>
+                                <input type="text" id="ul-path" required placeholder="C:\Users\Administrator\Desktop\fix.ps1">
+                            </div>
+                            <div class="form-group">
+                                <label for="ul-file">SELECT LOCAL FILE</label>
+                                <input type="file" id="ul-file" required>
+                            </div>
+                            <button type="submit" class="btn-primary">UPLOAD FILE</button>
+                        </form>
+                    </div>
+                </div>
+                <div id="file-progress" class="file-progress-output"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

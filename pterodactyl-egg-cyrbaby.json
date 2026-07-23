@@ -1,0 +1,62 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2024-01-01T00:00:00+00:00",
+    "name": "Cyrbaby Backend",
+    "author": "admin@cyrbaby.local",
+    "description": "Egg khusus untuk menjalankan backend Cyrbaby.",
+    "features": null,
+    "docker_images": {
+        "Alpine": "ghcr.io/pterodactyl/yolks:alpine"
+    },
+    "file_denylist": [],
+    "startup": "chmod +x ./backend-linux && PORT={{SERVER_PORT}} ./backend-linux",
+    "config": {
+        "files": "{}",
+        "startup": "{\n    \"done\": \"WebSocket Hub started.\"\n}",
+        "logs": "{}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/ash\necho \"Egg setup complete. Silakan upload file backend-linux Anda ke File Manager.\"",
+            "container": "alpine:latest",
+            "entrypoint": "ash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Server Port",
+            "description": "Port utama tempat backend berjalan (akan ditimpa otomatis oleh pengaturan port Pterodactyl).",
+            "env_variable": "SERVER_PORT",
+            "default_value": "8080",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:1|max:65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Telegram Bot Token",
+            "description": "Token bot Telegram untuk notifikasi (opsional, bisa dikosongkan jika diatur di config.json).",
+            "env_variable": "TELEGRAM_TOKEN",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        },
+        {
+            "name": "Admin Password",
+            "description": "Password admin dashboard (opsional, bisa dikosongkan jika diatur di config.json).",
+            "env_variable": "ADMIN_PASSWORD",
+            "default_value": "admin",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string",
+            "field_type": "text"
+        }
+    ]
+}
