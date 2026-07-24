@@ -181,25 +181,36 @@ func (d *DB) GetServer(id string) (*Server, error) {
 		return nil, err
 	}
 
-	s.FirstSeenAt, _ = time.Parse("2006-01-02 15:04:05", firstSeenStr)
-	if s.FirstSeenAt.IsZero() {
-		s.FirstSeenAt, _ = time.Parse(time.RFC3339, firstSeenStr)
-	}
-	s.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenStr)
-	if s.LastSeenAt.IsZero() {
-		s.LastSeenAt, _ = time.Parse(time.RFC3339, lastSeenStr)
-	}
+	s.FirstSeenAt = parseDBTime(firstSeenStr)
+	s.LastSeenAt = parseDBTime(lastSeenStr)
 
 	if approvedStr.Valid {
-		t, err := time.Parse("2006-01-02 15:04:05", approvedStr.String)
-		if err != nil {
-			t, _ = time.Parse(time.RFC3339, approvedStr.String)
-		}
+		t := parseDBTime(approvedStr.String)
 		s.ApprovedAt = &t
 	}
 
 	return &s, nil
 }
+
+func parseDBTime(str string) time.Time {
+	if str == "" {
+		return time.Time{}
+	}
+	formats := []string{
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, str); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 
 func (d *DB) GetServerAuthToken(id string) (string, error) {
 	var token sql.NullString
@@ -320,22 +331,14 @@ func (d *DB) GetServers() ([]*Server, error) {
 			return nil, errScan
 		}
 
-		s.FirstSeenAt, _ = time.Parse("2006-01-02 15:04:05", firstSeenStr)
-		if s.FirstSeenAt.IsZero() {
-			s.FirstSeenAt, _ = time.Parse(time.RFC3339, firstSeenStr)
-		}
-		s.LastSeenAt, _ = time.Parse("2006-01-02 15:04:05", lastSeenStr)
-		if s.LastSeenAt.IsZero() {
-			s.LastSeenAt, _ = time.Parse(time.RFC3339, lastSeenStr)
-		}
+		s.FirstSeenAt = parseDBTime(firstSeenStr)
+		s.LastSeenAt = parseDBTime(lastSeenStr)
 
 		if approvedStr.Valid {
-			t, errVal := time.Parse("2006-01-02 15:04:05", approvedStr.String)
-			if errVal != nil {
-				t, _ = time.Parse(time.RFC3339, approvedStr.String)
-			}
+			t := parseDBTime(approvedStr.String)
 			s.ApprovedAt = &t
 		}
+
 
 		list = append(list, &s)
 	}

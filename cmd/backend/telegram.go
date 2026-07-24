@@ -309,7 +309,8 @@ func (tb *TelegramBot) cmdList(m *tgbotapi.Message, args []string) {
 		}
 
 		client, connected := tb.hub.clients[s.ID]
-		isOnline := connected && client.approved && time.Since(s.LastSeenAt) < 20*time.Second
+		isOnline := connected && client.approved && (s.LastSeenAt.IsZero() || time.Since(s.LastSeenAt) < 60*time.Second)
+
 		statusEmoji := "🔴"
 		if s.Status == "pending_approval" {
 			statusEmoji = "⏳ [Pending /approve]"
@@ -365,7 +366,8 @@ func (tb *TelegramBot) cmdInfo(m *tgbotapi.Message, args []string) {
 	}
 
 	client, connected := tb.hub.clients[s.ID]
-	isOnline := connected && client.approved && time.Since(s.LastSeenAt) < 20*time.Second
+	isOnline := connected && client.approved && (s.LastSeenAt.IsZero() || time.Since(s.LastSeenAt) < 60*time.Second)
+
 	status := "🔴 Offline"
 	if isOnline {
 		status = fmt.Sprintf("🟢 Online (CPU: %.0f%%, RAM: %.1f/%.1fGB)", load, float64(ramUsedMB)/1024, float64(s.RAMTotalMB)/1024)
