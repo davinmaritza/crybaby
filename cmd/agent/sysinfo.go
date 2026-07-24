@@ -2,11 +2,33 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"net"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
 )
+
+// GetHardwareUUID generates a deterministic, unique UUID derived from the primary physical MAC address.
+func GetHardwareUUID() string {
+	interfaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range interfaces {
+			// Find primary active non-loopback hardware interface
+			if iface.Flags&net.FlagLoopback == 0 && len(iface.HardwareAddr) == 6 {
+				mac := strings.ToLower(iface.HardwareAddr.String())
+				hash := sha256.Sum256([]byte("cyrbaby-hardware-id-" + mac))
+				hexStr := fmt.Sprintf("%x", hash)
+				return fmt.Sprintf("%s-%s-%s-%s-%s", hexStr[:8], hexStr[8:12], hexStr[12:16], hexStr[16:20], hexStr[20:32])
+			}
+		}
+	}
+	return uuid.New().String()
+}
+
 
 // SysInfo represents the system specification.
 type SysInfo struct {

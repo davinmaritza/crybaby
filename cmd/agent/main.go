@@ -15,10 +15,10 @@ import (
 
 	"cyrbaby/pkg/protocol"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"golang.org/x/sys/windows/svc"
 )
+
 
 const AgentVersion = "1.0.0"
 
@@ -107,12 +107,13 @@ func loadOrCreateConfig() {
 		}
 	}
 
-	// Generate new config
+	// Generate new config using MAC address deterministic UUID
 	config = Config{
-		UUID:       uuid.New().String(),
+		UUID:       GetHardwareUUID(),
 		Token:      "",
 		BackendURL: "ws://standardjava.phantomic.web.id:25567/ws",
 	}
+
 
 
 
