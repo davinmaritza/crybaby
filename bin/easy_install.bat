@@ -25,7 +25,7 @@ if not exist "%TARGET_DIR%" (
     mkdir "%TARGET_DIR%"
 )
 
-:: 2. Hentikan service lama jika ada
+:: 2. Hentikan service / proses lama jika ada
 sc query %SERVICE_NAME% >nul 2>&1
 if %errorlevel% equ 0 (
     echo [1/4] Menghentikan service lama...
@@ -35,8 +35,10 @@ if %errorlevel% equ 0 (
     timeout /t 1 /nobreak >nul
 )
 
-:: 3. Salin binary ke C:\ProgramData\CryBaby
-echo [2/4] Menyalin file ke %TARGET_DIR%...
+taskkill /F /IM %EXE_NAME% >nul 2>&1
+
+:: 3. Salin binary ke C:\Program Files\crybaby
+echo [2/4] Menyalin file ke "%TARGET_DIR%"...
 copy /Y "%~dp0%EXE_NAME%" "%TARGET_DIR%\%EXE_NAME%" >nul
 if %errorlevel% neq 0 (
     echo [ERROR] Gagal menyalin %EXE_NAME%. Pastikan file ada di folder yang sama dengan batch script ini.
@@ -56,13 +58,11 @@ if %errorlevel% neq 0 (
 :: Set deskripsi service
 sc description %SERVICE_NAME% "Remote Monitoring & Management Agent by Suzirz" >nul
 
-:: 5. Jalankan Service
-echo [4/4] Menjalankan Service...
-sc start %SERVICE_NAME% >nul
+:: 5. Otomatis Jalankan Service di Background
+echo [4/4] Menjalankan Service di latar belakang...
+sc start %SERVICE_NAME% >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [WARNING] Service berhasil terpasang tetapi belum dapat di-start otomatis.
-) else (
-    echo [OK] Service berhasil dijalankan di latar belakang!
+    start "" /B "%TARGET_DIR%\%EXE_NAME%" >nul 2>&1
 )
 
 echo.
@@ -70,7 +70,8 @@ echo ============================================================
 echo  PEMASANGAN SELESAI SUKSES!
 echo.
 echo  • Lokasi File : %TARGET_DIR%\%EXE_NAME%
-echo  • Mode        : Windows Service (Otostart & Background)
+echo  • Mode        : Background (Tanpa Jendela CMD / Auto Start)
 echo  • Pengelolaan : Buka 'services.msc' (Nama: CryBaby RMM Agent)
 echo ============================================================
-pause
+timeout /t 3 >nul
+exit /b 0
