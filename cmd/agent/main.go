@@ -305,13 +305,10 @@ func handleServerMessage(msg protocol.Message) {
 
 		if !resp.Success {
 			log.Printf("Registration rejected: %s", resp.Message)
-			if resp.Status == "rejected" || resp.Status == "removed" {
-				// Uninstall signal
-				uninstallAgent()
-			}
 			conn.Close()
 			return
 		}
+
 
 		log.Printf("Registration status: %s", resp.Status)
 		if resp.Token != "" && resp.Token != config.Token {

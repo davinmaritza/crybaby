@@ -233,10 +233,13 @@ func (d *DB) RegisterOrUpdateServer(id string, hostname string, osVer string, cp
 	status = existingStatus.String
 	token = existingToken.String
 
-	// If removed, agent shouldn't connect or should get rejected, but if they connect we still tell them rejected
-	if status == "removed" {
-		return "rejected", "", false, nil
+	// If removed, reset status to pending_approval for re-installation
+	if status == "removed" || status == "rejected" {
+		status = "pending_approval"
+		token = ""
+		_, _ = d.Exec("UPDATE servers SET status = 'pending_approval', auth_token = NULL WHERE id = ?", id)
 	}
+
 
 	_, err = d.Exec(`
 		UPDATE servers 
