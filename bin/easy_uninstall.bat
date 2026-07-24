@@ -15,7 +15,7 @@ set "TARGET_DIR=C:\Program Files\crybaby"
 set "SERVICE_NAME=CryBabyAgent"
 
 echo ============================================================
-echo   Mencopot CryBaby Agent Service
+echo   Mencopot CryBaby Agent dari %TARGET_DIR%
 echo ============================================================
 echo.
 
@@ -23,16 +23,17 @@ echo [1/3] Menghentikan service %SERVICE_NAME%...
 sc stop %SERVICE_NAME% >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-echo [2/3] Menghapus Windows Service...
+echo [2/3] Menghapus Windows Service (%SERVICE_NAME%)...
 sc delete %SERVICE_NAME% >nul 2>&1
 
-echo [3/3] Menghapus folder %TARGET_DIR%...
+echo [3/3] Menghapus folder "%TARGET_DIR%"...
 if exist "%TARGET_DIR%" (
     rmdir /S /Q "%TARGET_DIR%" >nul 2>&1
 )
 
 echo.
 echo ============================================================
-echo  PEMPCOPOTAN SELESAI SUKSES!
+echo  PEMCOPOTAN SELESAI SUKSES!
+echo  Agent berhasil dihapus bersih dari sistem Windows.
 echo ============================================================
 pause
