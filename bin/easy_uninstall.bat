@@ -11,7 +11,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-set "TARGET_DIR=C:\ProgramData\CryBaby"
+set "TARGET_DIR=C:\Program Files\crybaby"
 set "SERVICE_NAME=CryBabyAgent"
 
 echo ============================================================
