@@ -395,8 +395,8 @@ func (c *Client) handleMessage(msg protocol.Message) error {
 		}
 
 		if status == "approved" {
-			// Token validation
-			if req.Token != dbToken {
+			// Token validation (allow empty token on first approved connect so agent receives dbToken)
+			if req.Token != "" && req.Token != dbToken {
 				resp := protocol.RegisterResponse{Success: false, Status: "unauthorized", Message: "Invalid token"}
 				p, _ := json.Marshal(resp)
 				msgBytes, _ := json.Marshal(protocol.Message{Type: protocol.TypeRegisterResponse, Payload: p})
@@ -410,6 +410,7 @@ func (c *Client) handleMessage(msg protocol.Message) error {
 			c.token = dbToken
 			c.mu.Unlock()
 		}
+
 
 		h := c.hub
 		h.register <- c
