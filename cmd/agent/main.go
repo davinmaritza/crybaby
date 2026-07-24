@@ -101,7 +101,7 @@ func loadOrCreateConfig() {
 	if err == nil {
 		if err := json.Unmarshal(data, &config); err == nil && config.UUID != "" {
 			if config.BackendURL == "" {
-				config.BackendURL = "ws://standardjava.phantomic.web.id:25567/ws"
+				config.BackendURL = "ws://your-backend-domain.com:25583/ws"
 			}
 			return
 		}
@@ -111,8 +111,9 @@ func loadOrCreateConfig() {
 	config = Config{
 		UUID:       uuid.New().String(),
 		Token:      "",
-		BackendURL: "ws://standardjava.phantomic.web.id:25567/ws",
+		BackendURL: "ws://your-backend-domain.com:25583/ws",
 	}
+
 
 	saveConfig()
 }

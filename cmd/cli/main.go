@@ -104,8 +104,9 @@ var (
 )
 
 func main() {
-	flagServer := flag.String("server", "http://standardjava.phantomic.web.id:25567", "Cyrbaby backend server URL")
+	flagServer := flag.String("server", "http://your-backend-domain.com:25583", "Cyrbaby backend server URL")
 	flagPass := flag.String("pass", "admin", "Admin password")
+
 
 	flag.Parse()
 
