@@ -134,11 +134,21 @@ func saveConfig() {
 		log.Printf("Failed to marshal config: %v", err)
 		return
 	}
-	err = os.WriteFile(configPath, data, 0644)
+	err = os.WriteFile(configPath, data, 0666)
 	if err != nil {
-		log.Printf("Failed to write config: %v", err)
+		log.Printf("Failed to write config to %s: %v. Trying fallback path...", configPath, err)
+		fallbackDir := `C:\ProgramData\CryBaby`
+		_ = os.MkdirAll(fallbackDir, 0777)
+		fallbackPath := filepath.Join(fallbackDir, "agent_config.json")
+		if errFallback := os.WriteFile(fallbackPath, data, 0666); errFallback == nil {
+			configPath = fallbackPath
+			log.Printf("Successfully saved config to fallback path: %s", fallbackPath)
+		} else {
+			log.Printf("Failed to write config to fallback path: %v", errFallback)
+		}
 	}
 }
+
 
 func reconnectLoop() {
 	backoff := 2 * time.Second

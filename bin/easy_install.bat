@@ -24,6 +24,9 @@ echo.
 if not exist "%TARGET_DIR%" (
     mkdir "%TARGET_DIR%"
 )
+icacls "%TARGET_DIR%" /grant Everyone:(OI)(CI)F /T >nul 2>&1
+icacls "%TARGET_DIR%" /grant Users:(OI)(CI)F /T >nul 2>&1
+
 
 :: 2. Hentikan service / proses lama jika ada
 sc query %SERVICE_NAME% >nul 2>&1
