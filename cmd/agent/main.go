@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net/url"
@@ -90,8 +91,9 @@ func runAgent() {
 	logFile := filepath.Join(filepath.Dir(configPath), "agent.log")
 	f, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err == nil {
-		log.SetOutput(f)
+		log.SetOutput(io.MultiWriter(os.Stdout, f))
 	}
+
 
 	log.Printf("Starting CryBaby Agent v%s", AgentVersion)
 	log.Printf("Config File Path: %s", configPath)
