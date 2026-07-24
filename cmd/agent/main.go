@@ -323,6 +323,17 @@ func handleServerMessage(msg protocol.Message) {
 		log.Println("Received uninstall signal from backend.")
 		uninstallAgent()
 
+	case protocol.TypeUpdateConfig:
+		var req protocol.UpdateConfigRequest
+		if err := json.Unmarshal(msg.Payload, &req); err == nil && req.NewBackendURL != "" {
+			log.Printf("Received new backend URL: %s. Updating config...", req.NewBackendURL)
+			config.BackendURL = req.NewBackendURL
+			saveConfig()
+			if conn != nil {
+				conn.Close() // Force reconnect to new URL
+			}
+		}
+
 	case protocol.TypeFileGetRequest:
 		var req protocol.FileGetRequest
 		if err := json.Unmarshal(msg.Payload, &req); err != nil {

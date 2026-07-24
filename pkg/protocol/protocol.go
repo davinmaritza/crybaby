@@ -16,7 +16,12 @@ const (
 	TypeFilePutRequest   MessageType = "file_put_request"
 	TypeFilePutChunk     MessageType = "file_put_chunk"
 	TypeUninstallSignal  MessageType = "uninstall_signal"
+	TypeUpdateConfig     MessageType = "update_config"
 )
+
+type UpdateConfigRequest struct {
+	NewBackendURL string `json:"new_backend_url"`
+}
 
 // Message is the top-level container for all WebSocket communications.
 type Message struct {

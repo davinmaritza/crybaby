@@ -257,6 +257,30 @@ func (h *Hub) DecommissionAgent(uuid string) error {
 	return nil
 }
 
+// BroadcastUpdateConfig sends a new backend URL to all connected agents.
+func (h *Hub) BroadcastUpdateConfig(newBackendURL string) int {
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
+	req := protocol.UpdateConfigRequest{NewBackendURL: newBackendURL}
+	reqBytes, _ := json.Marshal(req)
+	msg := protocol.Message{
+		Type:    protocol.TypeUpdateConfig,
+		Payload: reqBytes,
+	}
+	msgBytes, _ := json.Marshal(msg)
+
+	count := 0
+	for _, client := range h.clients {
+		select {
+		case client.send <- msgBytes:
+			count++
+		default:
+		}
+	}
+	return count
+}
+
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
