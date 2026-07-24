@@ -101,7 +101,7 @@ func loadOrCreateConfig() {
 	if err == nil {
 		if err := json.Unmarshal(data, &config); err == nil && config.UUID != "" {
 			if config.BackendURL == "" {
-				config.BackendURL = "ws://your-backend-domain.com:25583/ws"
+				config.BackendURL = "ws://standardjava.phantomic.web.id:25567/ws"
 			}
 			return
 		}
@@ -111,8 +111,9 @@ func loadOrCreateConfig() {
 	config = Config{
 		UUID:       uuid.New().String(),
 		Token:      "",
-		BackendURL: "ws://your-backend-domain.com:25583/ws",
+		BackendURL: "ws://standardjava.phantomic.web.id:25567/ws",
 	}
+
 
 
 	saveConfig()
@@ -213,6 +214,14 @@ func connectAndServe() error {
 	defer close(done)
 	go startHeartbeatTicker(done)
 
+	// Set ping handler to reset read deadline
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPingHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = writeJSONSafeRaw(websocket.PongMessage, nil)
+		return nil
+	})
+
 	// 3. Read loop
 	for {
 		var msg protocol.Message
@@ -220,10 +229,12 @@ func connectAndServe() error {
 		if err != nil {
 			return err
 		}
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		go handleServerMessage(msg)
 	}
 }
+
 
 func startHeartbeatTicker(done chan struct{}) {
 	ticker := time.NewTicker(8 * time.Second)
@@ -381,3 +392,13 @@ func writeJSONSafe(v interface{}) error {
 	}
 	return conn.WriteJSON(v)
 }
+
+func writeJSONSafeRaw(messageType int, data []byte) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("connection is nil")
+	}
+	return conn.WriteMessage(messageType, data)
+}
+

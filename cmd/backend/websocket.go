@@ -302,6 +302,7 @@ func (c *Client) readPump() {
 			}
 			break
 		}
+		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		var msg protocol.Message
 		if err := json.Unmarshal(message, &msg); err != nil {
@@ -314,6 +315,7 @@ func (c *Client) readPump() {
 		}
 	}
 }
+
 
 func (c *Client) writePump() {
 	ticker := time.NewTicker(30 * time.Second)
@@ -423,8 +425,20 @@ func (c *Client) handleMessage(msg protocol.Message) error {
 
 	case protocol.TypeHeartbeat:
 		if !c.approved {
-			return errors.New("heartbeat received from unapproved client")
+			s, err := c.hub.db.GetServer(c.uuid)
+			if err == nil && s != nil && s.Status == "approved" {
+				token, _ := c.hub.db.GetServerAuthToken(c.uuid)
+				c.mu.Lock()
+				c.approved = true
+				c.token = token
+				c.mu.Unlock()
+				log.Printf("Agent %s is now approved!", c.uuid)
+			} else {
+				return nil // Unapproved client, silently skip heartbeat processing
+			}
 		}
+
+
 
 		var hb protocol.Heartbeat
 		if err := json.Unmarshal(msg.Payload, &hb); err != nil {
