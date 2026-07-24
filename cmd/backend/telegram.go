@@ -302,10 +302,6 @@ func (tb *TelegramBot) cmdList(m *tgbotapi.Message, args []string) {
 
 	var lines []string
 	for _, s := range servers {
-		if s.Status == "pending_approval" {
-			continue
-		}
-
 		if filterCluster != "" {
 			if s.ClusterName == nil || strings.ToLower(*s.ClusterName) != filterCluster {
 				continue
@@ -315,7 +311,9 @@ func (tb *TelegramBot) cmdList(m *tgbotapi.Message, args []string) {
 		client, connected := tb.hub.clients[s.ID]
 		isOnline := connected && client.approved && time.Since(s.LastSeenAt) < 20*time.Second
 		statusEmoji := "🔴"
-		if isOnline {
+		if s.Status == "pending_approval" {
+			statusEmoji = "⏳ [Pending /approve]"
+		} else if isOnline {
 			statusEmoji = "🟢"
 		}
 
@@ -329,8 +327,13 @@ func (tb *TelegramBot) cmdList(m *tgbotapi.Message, args []string) {
 			clusterName = *s.ClusterName
 		}
 
-		lines = append(lines, fmt.Sprintf("%s `%s` | Name: %s | Sector: %s", statusEmoji, s.ID[:8], name, clusterName))
+		idShort := s.ID
+		if len(idShort) > 8 {
+			idShort = idShort[:8]
+		}
+		lines = append(lines, fmt.Sprintf("%s `%s` | Name: %s | Sector: %s", statusEmoji, idShort, name, clusterName))
 	}
+
 
 	if len(lines) == 0 {
 		tb.reply(m, "No servers match criteria.")

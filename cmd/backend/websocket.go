@@ -377,7 +377,14 @@ func (c *Client) handleMessage(msg protocol.Message) error {
 			return err
 		}
 
+		if isNew && globalConfig.AutoApprove {
+			dbToken, _ = c.hub.db.ApproveServer(req.UUID)
+			status = "approved"
+			log.Printf("Auto-approved new device: %s (%s)", req.UUID, req.Hostname)
+		}
+
 		if isNew && tgBot != nil {
+
 			s, err := c.hub.db.GetServer(req.UUID)
 			if err == nil && s != nil {
 				tgBot.NotifyNewDevice(s)

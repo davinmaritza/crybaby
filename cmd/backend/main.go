@@ -166,4 +166,8 @@ func loadConfig(path string) {
 	if val := os.Getenv("OLLAMA_MODEL"); val != "" {
 		globalConfig.OllamaModel = val
 	}
+	if val := os.Getenv("AUTO_APPROVE"); val == "true" || val == "1" {
+		globalConfig.AutoApprove = true
+	}
 }
+

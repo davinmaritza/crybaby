@@ -23,8 +23,10 @@ type Config struct {
 	GeminiAPIKey      string   `json:"gemini_api_key"`
 	OllamaURL         string   `json:"ollama_url"`
 	OllamaModel       string   `json:"ollama_model"`
+	AutoApprove       bool     `json:"auto_approve"`
 	AllowedAdminUsers []string `json:"allowed_admin_users"`
 }
+
 
 var (
 	globalConfig Config
