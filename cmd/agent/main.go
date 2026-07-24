@@ -78,21 +78,29 @@ func main() {
 }
 
 func runAgent() {
-	if !filepath.IsAbs(configPath) {
-		exePath, err := os.Executable()
-		if err == nil {
-			configPath = filepath.Join(filepath.Dir(exePath), configPath)
-		}
+	exePath, err := os.Executable()
+	if err == nil && exePath != "" {
+		configPath = filepath.Join(filepath.Dir(exePath), "agent_config.json")
+	} else if !filepath.IsAbs(configPath) {
+		configPath = "agent_config.json"
 	}
 
 	loadOrCreateConfig()
 
+	logFile := filepath.Join(filepath.Dir(configPath), "agent.log")
+	f, err := os.OpenFile(logFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err == nil {
+		log.SetOutput(f)
+	}
+
 	log.Printf("Starting CryBaby Agent v%s", AgentVersion)
+	log.Printf("Config File Path: %s", configPath)
 	log.Printf("Device UUID: %s", config.UUID)
 	log.Printf("Connecting to Backend: %s", config.BackendURL)
 
 	reconnectLoop()
 }
+
 
 
 
