@@ -13,12 +13,15 @@ import (
 	"runtime"
 	"sync"
 	"time"
+	"unsafe"
 
 	"cyrbaby/pkg/protocol"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 )
+
 
 
 const AgentVersion = "1.0.0"
@@ -79,7 +82,10 @@ func main() {
 }
 
 func runAgent() {
+	ensureSingleInstance()
+
 	exePath, err := os.Executable()
+
 	if err == nil && exePath != "" {
 		configPath = filepath.Join(filepath.Dir(exePath), "agent_config.json")
 	} else if !filepath.IsAbs(configPath) {
@@ -419,4 +425,22 @@ func writeJSONSafeRaw(messageType int, data []byte) error {
 	}
 	return conn.WriteMessage(messageType, data)
 }
+
+func ensureSingleInstance() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+	createMutex := kernel32.NewProc("CreateMutexW")
+	name, err := windows.UTF16PtrFromString("Global\\CryBabyAgentSingleInstanceMutex")
+	if err != nil {
+		return
+	}
+	ret, _, errCall := createMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
+	if ret == 0 || errCall == windows.ERROR_ALREADY_EXISTS {
+		log.Println("Another instance of CryBaby Agent is already running. Exiting.")
+		os.Exit(0)
+	}
+}
+
 
