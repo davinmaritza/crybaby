@@ -250,29 +250,29 @@ const dashboardHTML = `<!DOCTYPE html>
                     </span>
                     <i id="newVMChevron" class="fa-solid fa-chevron-down text-gray-400 text-xs transition-transform"></i>
                 </div>
-                <form id="newVMForm" class="hidden space-y-3 pt-2" onsubmit="submitNewVM(event)">
+                <form id="newVMForm" autocomplete="off" class="hidden space-y-3 pt-2" onsubmit="submitNewVM(event)">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                         <div>
-                            <label class="block text-gray-400 mb-1">Nama Virtual Machine</label>
-                            <input id="vmName" required type="text" placeholder="e.g. win11-sandbox-01" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                            <label for="vmName" class="block text-gray-400 mb-1">Nama Virtual Machine</label>
+                            <input id="vmName" name="name" autocomplete="off" required type="text" placeholder="e.g. win11-sandbox-01" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                         </div>
                         <div>
-                            <label class="block text-gray-400 mb-1">Virtual Switch</label>
-                            <select id="vmSwitch" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                            <label for="vmSwitch" class="block text-gray-400 mb-1">Virtual Switch</label>
+                            <select id="vmSwitch" name="switch_name" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                                 <option value="Default Switch">Default Switch</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-gray-400 mb-1">vCPU Cores</label>
-                            <input id="vmCores" type="number" min="1" max="64" value="2" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                            <label for="vmCores" class="block text-gray-400 mb-1">vCPU Cores</label>
+                            <input id="vmCores" name="cpu_count" type="number" min="1" max="64" value="2" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                         </div>
                         <div>
-                            <label class="block text-gray-400 mb-1">RAM (MB)</label>
-                            <input id="vmRAM" type="number" min="512" step="512" value="4096" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                            <label for="vmRAM" class="block text-gray-400 mb-1">RAM (MB)</label>
+                            <input id="vmRAM" name="memory_mb" type="number" min="512" step="512" value="4096" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                         </div>
                         <div class="md:col-span-2">
-                            <label class="block text-gray-400 mb-1">Ukuran Hard Disk VHDX (GB)</label>
-                            <input id="vmDisk" type="number" min="10" max="2000" value="40" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                            <label for="vmDisk" class="block text-gray-400 mb-1">Ukuran Hard Disk VHDX (GB)</label>
+                            <input id="vmDisk" name="disk_size_gb" type="number" min="10" max="2000" value="40" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                         </div>
                     </div>
                     <div class="flex justify-end">
@@ -331,7 +331,11 @@ const dashboardHTML = `<!DOCTYPE html>
     </div>
 
     <script>
-        function openUSBModal() { document.getElementById('usbModal').classList.remove('hidden'); }
+        function openUSBModal() { 
+            const ep = document.getElementById('modalEndpoint');
+            if (ep) ep.innerText = window.location.origin;
+            document.getElementById('usbModal').classList.remove('hidden'); 
+        }
         function closeUSBModal() { document.getElementById('usbModal').classList.add('hidden'); }
         function downloadUSBPack() {
             window.location.href = '/api/v1/provision/usb-zip';
@@ -394,7 +398,10 @@ const dashboardHTML = `<!DOCTYPE html>
 
                 const cpu = (n.latest_metrics && n.latest_metrics.cpu_usage_pct !== undefined) ? n.latest_metrics.cpu_usage_pct.toFixed(1) + '%' : '-';
                 const ram = (n.latest_metrics && n.latest_metrics.ram_used_bytes) ? (n.latest_metrics.ram_used_bytes / (1024*1024*1024)).toFixed(1) + ' GB' : '-';
-                const hypervBadge = n.hardware.hyperv_enabled
+                const hw = n.hardware || {};
+                const cpuCores = hw.cpu_cores || 0;
+                const totalRamGB = hw.total_ram_bytes ? (hw.total_ram_bytes / (1024*1024*1024)).toFixed(0) : '0';
+                const hypervBadge = hw.hyperv_enabled
                     ? '<span class=\"text-emerald-400 font-semibold\"><i class=\"fa-solid fa-circle-check mr-1\"></i>Ready</span>'
                     : '<span class=\"text-amber-400 font-semibold\"><i class=\"fa-solid fa-triangle-exclamation mr-1\"></i>Disabled</span>';
 
@@ -402,13 +409,13 @@ const dashboardHTML = `<!DOCTYPE html>
                     '<td class=\"px-6 py-4 font-medium text-white flex items-center gap-2\"><i class=\"fa-brands fa-windows text-blue-400\"></i>' + escapeHtml(n.name) + '</td>' +
                     '<td class=\"px-6 py-4\">' + statusBadge + '</td>' +
                     '<td class=\"px-6 py-4 font-mono text-xs\"><span class=\"text-indigo-400 font-semibold\">' + (n.mesh_ip || '-') + '</span><br><span class=\"text-gray-500\">' + (n.ip_address || '-') + '</span></td>' +
-                    '<td class=\"px-6 py-4 text-xs text-gray-300\">' + escapeHtml(n.hardware.cpu_model || 'Unknown CPU') + '<br><span class=\"text-gray-500\">' + n.hardware.cpu_cores + ' Cores &bull; ' + (n.hardware.total_ram_bytes / (1024*1024*1024)).toFixed(0) + ' GB RAM</span></td>' +
+                    '<td class=\"px-6 py-4 text-xs text-gray-300\">' + escapeHtml(hw.cpu_model || 'Unknown CPU') + '<br><span class=\"text-gray-500\">' + cpuCores + ' Cores &bull; ' + totalRamGB + ' GB RAM</span></td>' +
                     '<td class=\"px-6 py-4 text-xs font-mono\"><span class=\"text-white font-semibold\">CPU: ' + cpu + '</span><br><span class=\"text-gray-400\">RAM: ' + ram + '</span></td>' +
                     '<td class=\"px-6 py-4 text-xs\">' + hypervBadge + '</td>' +
                     '<td class=\"px-6 py-4 text-right space-x-1.5\">' +
-                        (!isOnline ? '<button onclick=\"triggerWoL(\'' + n.id + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
-                        '<button onclick=\"openVMModal(\'' + n.id + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
-                        '<button onclick=\"openTerminal(\'' + n.id + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
+                        (!isOnline ? '<button onclick=\"triggerWoL(\'' + escapeHtml(n.id) + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
+                        '<button onclick=\"openVMModal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
+                        '<button onclick=\"openTerminal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
                     '</td>' +
                 '</tr>';
             }
@@ -594,6 +601,7 @@ const dashboardHTML = `<!DOCTYPE html>
             };
 
             termWS.onmessage = (e) => {
+                if (!term) return;
                 try {
                     const msg = JSON.parse(e.data);
                     if (msg.type === 'output' && msg.data) {
@@ -602,16 +610,20 @@ const dashboardHTML = `<!DOCTYPE html>
                         term.writeln('\r\n\x1b[31m[Error] ' + msg.data + '\x1b[0m\r\n');
                     }
                 } catch (err) {
-                    term.write(e.data);
+                    if (term) term.write(e.data);
                 }
             };
 
             termWS.onerror = () => {
-                term.writeln('\r\n\x1b[31m✖ WebSocket error encountered.\x1b[0m\r\n');
+                if (term) {
+                    try { term.writeln('\r\n\x1b[31m✖ WebSocket error encountered.\x1b[0m\r\n'); } catch (e) {}
+                }
             };
 
             termWS.onclose = () => {
-                term.writeln('\r\n\x1b[33m⚡ Terminal session disconnected.\x1b[0m\r\n');
+                if (term) {
+                    try { term.writeln('\r\n\x1b[33m⚡ Terminal session disconnected.\x1b[0m\r\n'); } catch (e) {}
+                }
             };
 
             term.onData(data => {
@@ -620,31 +632,43 @@ const dashboardHTML = `<!DOCTYPE html>
                 }
             });
 
-            window.addEventListener('resize', () => {
-                if (fitAddon) fitAddon.fit();
-            });
         }
 
         function closeTerminal() {
             document.getElementById('terminalModal').classList.add('hidden');
             if (termWS) {
-                termWS.close();
+                termWS.onclose = null;
+                termWS.onerror = null;
+                termWS.onmessage = null;
+                try { termWS.close(); } catch (e) {}
                 termWS = null;
             }
             if (term) {
-                term.dispose();
+                try { term.dispose(); } catch(e) {}
                 term = null;
             }
         }
 
+        window.addEventListener('resize', () => {
+            if (fitAddon && term && !document.getElementById('terminalModal').classList.contains('hidden')) {
+                try { fitAddon.fit(); } catch(e) {}
+            }
+        });
+
         function fetchNodesManual() {
             fetch('/api/v1/nodes')
                 .then(r => r.json())
-                .then(nodes => renderNodes(nodes));
+                .then(nodes => renderNodes(nodes))
+                .catch(() => {});
         }
 
         function escapeHtml(str) {
-            return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
 
         connectWS();

@@ -48,6 +48,11 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	agentPort := req.Hardware.AgentPort
+	if agentPort == 0 {
+		agentPort = 8081
+	}
+
 	// Check if node exists by MAC address to prevent duplicates
 	for _, existing := range r.nodes {
 		if existing.Hardware.MACAddress == req.Hardware.MACAddress && req.Hardware.MACAddress != "" {
@@ -55,7 +60,7 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 			existing.LastSeen = time.Now()
 			existing.Hardware = req.Hardware
 			existing.IPAddress = remoteIP
-			existing.AgentPort = req.Hardware.AgentPort
+			existing.AgentPort = agentPort
 			existing.WireGuardPubKey = req.WireGuardPubKey
 			_ = r.saveToFileLocked()
 			return existing, nil
@@ -70,7 +75,7 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 		ID:              nodeID,
 		Name:            req.NodeName,
 		IPAddress:       remoteIP,
-		AgentPort:       req.Hardware.AgentPort,
+		AgentPort:       agentPort,
 		MeshIP:          meshIP,
 		Status:          types.NodeStatusOnline,
 		Hardware:        req.Hardware,
@@ -204,7 +209,20 @@ func (r *Registry) LoadFromFile() error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return json.Unmarshal(data, &r.nodes)
+	if err := json.Unmarshal(data, &r.nodes); err != nil {
+		return err
+	}
+
+	// Recalculate nextMeshOctet to prevent IP collision after restart
+	for _, node := range r.nodes {
+		var octet int
+		if _, err := fmt.Sscanf(node.MeshIP, "10.42.0.%d", &octet); err == nil {
+			if octet >= r.nextMeshOctet {
+				r.nextMeshOctet = octet + 1
+			}
+		}
+	}
+	return nil
 }
 
 func generateRandomID(bytesLen int) string {

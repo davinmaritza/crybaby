@@ -122,6 +122,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/ws/telemetry", s.handleWebSocketTelemetry)
 	mux.HandleFunc("/api/v1/ws/terminal/", s.handleWebSocketTerminalProxy)
 
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#6366F1"/><path d="M50 20 L35 55 L50 55 L45 80 L65 45 L50 45 Z" fill="#FFFFFF"/></svg>`))
+	})
+
 	// Embedded web dashboard
 	mux.HandleFunc("/", s.handleWebDashboard)
 }
