@@ -131,6 +131,18 @@ func (r *Registry) ListNodes() []*types.Node {
 	return list
 }
 
+// RemoveNode unregisters a node from the cluster and updates persistence.
+func (r *Registry) RemoveNode(id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.nodes[id]; !exists {
+		return fmt.Errorf("node not found")
+	}
+	delete(r.nodes, id)
+	return r.saveToFileLocked()
+}
+
 // ReapOfflineNodes checks for timed-out nodes and marks them OFFLINE.
 func (r *Registry) ReapOfflineNodes(timeout time.Duration) {
 	r.mu.Lock()

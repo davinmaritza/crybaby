@@ -226,9 +226,21 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 	nodeID := parts[0]
 
 	if len(parts) == 1 {
+		if r.Method == http.MethodDelete {
+			if err := s.registry.RemoveNode(nodeID); err != nil {
+				jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]string{"status": "Node removed successfully", "id": nodeID})
+			return
+		}
+		if r.Method != http.MethodGet {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
 		node, found := s.registry.GetNode(nodeID)
 		if !found {
-			http.Error(w, "Node not found", http.StatusNotFound)
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
 			return
 		}
 		jsonResponse(w, http.StatusOK, node)
@@ -239,36 +251,36 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 	switch action {
 	case "heartbeat":
 		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
 			return
 		}
 		var payload types.HeartbeatPayload
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			http.Error(w, "Invalid heartbeat JSON", http.StatusBadRequest)
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid heartbeat JSON"})
 			return
 		}
 		if err := s.registry.UpdateHeartbeat(nodeID, payload.Metrics); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 			return
 		}
 		jsonResponse(w, http.StatusOK, map[string]string{"status": "recorded"})
 
 	case "wol":
 		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
 			return
 		}
 		node, found := s.registry.GetNode(nodeID)
 		if !found {
-			http.Error(w, "Node not found", http.StatusNotFound)
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
 			return
 		}
 		if node.Hardware.MACAddress == "" {
-			http.Error(w, "Node has no registered MAC address", http.StatusBadRequest)
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Node has no registered MAC address"})
 			return
 		}
 		if err := cluster.SendWakeOnLAN(node.Hardware.MACAddress); err != nil {
-			http.Error(w, fmt.Sprintf("Failed to send WoL packet: %v", err), http.StatusInternalServerError)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to send WoL packet: %v", err)})
 			return
 		}
 		jsonResponse(w, http.StatusOK, map[string]string{
@@ -280,7 +292,7 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 	case "vms":
 		node, found := s.registry.GetNode(nodeID)
 		if !found {
-			http.Error(w, "Node not found", http.StatusNotFound)
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
 			return
 		}
 		subPath := strings.TrimPrefix(path, nodeID+"/")
@@ -289,17 +301,24 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 	case "switches":
 		node, found := s.registry.GetNode(nodeID)
 		if !found {
-			http.Error(w, "Node not found", http.StatusNotFound)
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
 			return
 		}
 		s.proxyToNode(node, "switches", w, r)
 
 	default:
-		http.Error(w, "Unknown node subroute", http.StatusNotFound)
+		jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Unknown node subroute"})
 	}
 }
 
 func (s *Server) proxyToNode(node *types.Node, subpath string, w http.ResponseWriter, r *http.Request) {
+	if node.Status == types.NodeStatusOffline {
+		jsonResponse(w, http.StatusBadGateway, map[string]string{
+			"error": fmt.Sprintf("Node '%s' saat ini OFFLINE. Pastikan PC menyala dan crybaby-agent aktif.", node.Name),
+		})
+		return
+	}
+
 	port := node.AgentPort
 	if port == 0 {
 		port = 8081
@@ -312,7 +331,9 @@ func (s *Server) proxyToNode(node *types.Node, subpath string, w http.ResponseWr
 
 	proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to construct proxy request: %v", err), http.StatusInternalServerError)
+		jsonResponse(w, http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("Gagal membuat proxy request: %v", err),
+		})
 		return
 	}
 
@@ -323,10 +344,12 @@ func (s *Server) proxyToNode(node *types.Node, subpath string, w http.ResponseWr
 		}
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(proxyReq)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Node agent unreachable at %s: %v", targetURL, err), http.StatusBadGateway)
+		jsonResponse(w, http.StatusBadGateway, map[string]string{
+			"error": fmt.Sprintf("Node agent tidak dapat dijangkau di %s (%v)", targetURL, err),
+		})
 		return
 	}
 	defer resp.Body.Close()

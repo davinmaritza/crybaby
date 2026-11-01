@@ -341,6 +341,39 @@ const dashboardHTML = `<!DOCTYPE html>
             window.location.href = '/api/v1/provision/usb-zip';
         }
 
+        async function fetchJson(url, options) {
+            const res = await fetch(url, options);
+            let data;
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+                try {
+                    data = await res.json();
+                } catch (e) {
+                    data = null;
+                }
+            } else {
+                const text = await res.text();
+                data = { error: text };
+            }
+            if (!res.ok) {
+                const msg = (data && data.error) ? data.error : ('HTTP ' + res.status);
+                throw new Error(msg);
+            }
+            return data;
+        }
+
+        async function removeNode(nodeId, nodeName) {
+            if (!confirm('Hapus node \"' + nodeName + '\" dari cluster?')) return;
+            try {
+                await fetchJson('/api/v1/nodes/' + nodeId, { method: 'DELETE' });
+                setTimeout(() => {
+                    fetch('/api/v1/nodes').then(r => r.json()).then(renderNodes).catch(() => {});
+                }, 200);
+            } catch (err) {
+                alert('Gagal menghapus node: ' + err.message);
+            }
+        }
+
         // Real-time WebSocket Stream
         const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = wsProto + '//' + window.location.host + '/api/v1/ws/telemetry';
@@ -416,6 +449,7 @@ const dashboardHTML = `<!DOCTYPE html>
                         (!isOnline ? '<button onclick=\"triggerWoL(\'' + escapeHtml(n.id) + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
                         '<button onclick=\"openVMModal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
                         '<button onclick=\"openTerminal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
+                        (!isOnline ? '<button onclick=\"removeNode(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" title=\"Hapus node offline ini dari cluster\" class=\"px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium border border-red-500/20 transition\"><i class=\"fa-solid fa-trash\"></i></button>' : '') +
                     '</td>' +
                 '</tr>';
             }
@@ -470,8 +504,7 @@ const dashboardHTML = `<!DOCTYPE html>
             const tbody = document.getElementById('vmTableBody');
             tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-500\">Memuat VM Hyper-V...</td></tr>';
             
-            fetch('/api/v1/nodes/' + nodeId + '/vms')
-                .then(r => r.json())
+            fetchJson('/api/v1/nodes/' + nodeId + '/vms')
                 .then(vms => {
                     if (!vms || vms.length === 0) {
                         tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-500\">Belum ada VM di node ini. Buat VM baru menggunakan form di atas.</td></tr>';
@@ -501,7 +534,7 @@ const dashboardHTML = `<!DOCTYPE html>
                     tbody.innerHTML = html;
                 })
                 .catch(err => {
-                    tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-red-400\">Gagal memuat VM: ' + err + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-amber-400/90 font-medium\"><i class=\"fa-solid fa-triangle-exclamation mr-2 text-amber-400\"></i>Gagal memuat VM: ' + escapeHtml(err.message) + '</td></tr>';
                 });
         }
 
@@ -517,14 +550,10 @@ const dashboardHTML = `<!DOCTYPE html>
                 disk_size_gb: parseInt(document.getElementById('vmDisk').value, 10)
             };
 
-            fetch('/api/v1/nodes/' + currentVMNodeId + '/vms', {
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
-            })
-            .then(r => {
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
             })
             .then(() => {
                 alert('VM ' + payload.name + ' berhasil dibuat!');
@@ -532,30 +561,27 @@ const dashboardHTML = `<!DOCTYPE html>
                 document.getElementById('newVMForm').reset();
                 loadVMs(currentVMNodeId);
             })
-            .catch(err => alert('Gagal membuat VM: ' + err));
+            .catch(err => alert('Gagal membuat VM: ' + err.message));
         }
 
         function controlVM(vmId, action) {
             if (!currentVMNodeId) return;
-            fetch('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId + '/' + action, { method: 'POST' })
-                .then(r => r.json())
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId + '/' + action, { method: 'POST' })
                 .then(() => loadVMs(currentVMNodeId))
-                .catch(err => alert('Gagal ' + action + ' VM: ' + err));
+                .catch(err => alert('Gagal ' + action + ' VM: ' + err.message));
         }
 
         function deleteVM(vmId) {
             if (!currentVMNodeId || !confirm('Yakin ingin menghapus VM ini beserta disk VHDX nya?')) return;
-            fetch('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId, { method: 'DELETE' })
-                .then(r => r.json())
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId, { method: 'DELETE' })
                 .then(() => loadVMs(currentVMNodeId))
-                .catch(err => alert('Gagal menghapus VM: ' + err));
+                .catch(err => alert('Gagal menghapus VM: ' + err.message));
         }
 
         function triggerWoL(nodeId) {
-            fetch('/api/v1/nodes/' + nodeId + '/wol', { method: 'POST' })
-                .then(r => r.json())
+            fetchJson('/api/v1/nodes/' + nodeId + '/wol', { method: 'POST' })
                 .then(d => alert('Wake-on-LAN packet terkirim ke MAC: ' + d.mac))
-                .catch(err => alert('Gagal mengirim WoL: ' + err));
+                .catch(err => alert('Gagal mengirim WoL: ' + err.message));
         }
 
         let termWS = null;

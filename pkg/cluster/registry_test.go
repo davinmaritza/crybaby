@@ -92,4 +92,15 @@ func TestNodeReaper(t *testing.T) {
 	if updatedNode.Status != types.NodeStatusOffline {
 		t.Errorf("expected node to be reaped as OFFLINE, got '%s'", updatedNode.Status)
 	}
+
+	// Test RemoveNode
+	if err := reg.RemoveNode(node.ID); err != nil {
+		t.Fatalf("failed to remove node: %v", err)
+	}
+	if _, found := reg.GetNode(node.ID); found {
+		t.Errorf("node %s should not exist after RemoveNode", node.ID)
+	}
+	if err := reg.RemoveNode("non-existent-id"); err == nil {
+		t.Errorf("expected error removing non-existent node")
+	}
 }
