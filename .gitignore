@@ -1,0 +1,26 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Runtime & Build Artifacts
+node_modules/
+dist/
+build/
+*.pyc
+__pycache__/
+.venv/
+env/
+target/
+
+# Logs & Temporary Files
+*.log
+logs/
+tmp/
+.temp/
+
+# IDE & OS Artifacts
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
