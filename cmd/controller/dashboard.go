@@ -274,6 +274,10 @@ const dashboardHTML = `<!DOCTYPE html>
                             <label for="vmDisk" class="block text-gray-400 mb-1">Ukuran Hard Disk VHDX (GB)</label>
                             <input id="vmDisk" name="disk_size_gb" type="number" min="10" max="2000" value="40" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                         </div>
+                        <div class="md:col-span-2">
+                            <label for="vmISO" class="block text-gray-400 mb-1">Path File ISO Installer (Opsional)</label>
+                            <input id="vmISO" name="iso_path" type="text" autocomplete="off" placeholder="e.g. C:\ISO\ubuntu-24.04-live-server.iso" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                        </div>
                     </div>
                     <div class="flex justify-end">
                         <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2">
@@ -547,7 +551,8 @@ const dashboardHTML = `<!DOCTYPE html>
                 switch_name: document.getElementById('vmSwitch').value,
                 cpu_count: parseInt(document.getElementById('vmCores').value, 10),
                 memory_mb: parseInt(document.getElementById('vmRAM').value, 10),
-                disk_size_gb: parseInt(document.getElementById('vmDisk').value, 10)
+                disk_size_gb: parseInt(document.getElementById('vmDisk').value, 10),
+                iso_path: (document.getElementById('vmISO') ? document.getElementById('vmISO').value.trim() : '')
             };
 
             fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms', {

@@ -34,7 +34,7 @@ if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 copy /y "%~dp0crybaby-agent.exe" "%TARGET_DIR%\" >nul
 copy /y "%~dp0crybaby-config.json" "%TARGET_DIR%\" >nul
 
-echo [3/5] Mengatur skema daya Windows (Anti-Sleep & Anti-Accidental Shutdown)...
+echo [3/6] Mengatur skema daya Windows (Anti-Sleep & Anti-Accidental Shutdown)...
 :: Cegah PC masuk mode Sleep / Hibernasi saat dicolok listrik
 powercfg -change -standby-timeout-ac 0 >nul 2>&1
 powercfg -change -hibernate-timeout-ac 0 >nul 2>&1
@@ -45,7 +45,28 @@ powercfg -change -monitor-timeout-ac 15 >nul 2>&1
 powercfg -setacvalueindex SCHEME_CURRENT SUB_BUTTONS PBUTTONACTION 0 >nul 2>&1
 powercfg -setactive SCHEME_CURRENT >nul 2>&1
 
-echo [4/5] Mendaftarkan Windows Service (CrybabyAgent)...
+echo [4/6] Mengonfigurasi Windows Firewall & Profil Jaringan LAN...
+:: Ubah profil koneksi aktif menjadi Private agar Windows tidak memblokir komunikasi LAN
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue" >nul 2>&1
+
+:: Buka port RPC Agent (TCP 8081)
+netsh advfirewall firewall delete rule name="Crybaby Agent RPC" >nul 2>&1
+netsh advfirewall firewall add rule name="Crybaby Agent RPC" dir=in action=allow protocol=TCP localport=8081 profile=any description="Crybaby Cluster RPC & WebSocket" >nul 2>&1
+
+:: Buka port WireGuard Mesh (UDP 51820)
+netsh advfirewall firewall delete rule name="Crybaby WireGuard Mesh" >nul 2>&1
+netsh advfirewall firewall add rule name="Crybaby WireGuard Mesh" dir=in action=allow protocol=UDP localport=51820 profile=any description="Crybaby P2P Mesh Fabric" >nul 2>&1
+
+:: Izinkan ICMPv4 (Ping) dari jaringan lokal
+netsh advfirewall firewall set rule name="File and Printer Sharing (Echo Request - ICMPv4-In)" new enable=yes >nul 2>&1
+
+echo [5/6] Mengatur Kebijakan Windows Update (Anti-Auto Reboot)...
+:: Mencegah Windows 11 melakukan restart paksa otomatis saat update terunduh
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoRebootWithLoggedOnUsers /t REG_DWORD /d 1 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v AUOptions /t REG_DWORD /d 3 /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v AlwaysAutoRebootAtScheduledTime /t REG_DWORD /d 0 /f >nul 2>&1
+
+echo [6/6] Mendaftarkan Windows Service (CrybabyAgent) & Memeriksa Hyper-V...
 sc stop CrybabyAgent >nul 2>&1
 sc delete CrybabyAgent >nul 2>&1
 timeout /t 1 /nobreak >nul
@@ -55,7 +76,6 @@ sc description CrybabyAgent "Crybaby Distributed Windows 11 Cluster & Hyper-V Ma
 sc failure CrybabyAgent reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul
 sc start CrybabyAgent >nul
 
-echo [5/5] Memeriksa status fitur Microsoft Hyper-V...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0enable-hyperv.ps1"
 
 echo.

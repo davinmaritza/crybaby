@@ -5,6 +5,22 @@ $hyperVFeature = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper
 
 if ($null -ne $hyperVFeature -and $hyperVFeature.State -eq "Enabled") {
     Write-Host "[OK] Microsoft Hyper-V sudah aktif pada perangkat ini." -ForegroundColor Green
+
+    # Periksa atau buat External Switch (Crybaby-LAN) jika kartu Ethernet fisik aktif
+    try {
+        $extSwitch = Get-VMSwitch -SwitchType External -ErrorAction SilentlyContinue
+        if (-not $extSwitch) {
+            $eth = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+            if ($eth) {
+                Write-Host "Mengonfigurasi Hyper-V External Switch ('Crybaby-LAN') pada adapter: $($eth.Name)..." -ForegroundColor Cyan
+                New-VMSwitch -Name "Crybaby-LAN" -NetAdapterName $eth.Name -AllowManagementOS $true -ErrorAction SilentlyContinue | Out-Null
+                Write-Host "[OK] Virtual Switch 'Crybaby-LAN' berhasil dibuat (Bridged LAN)." -ForegroundColor Green
+            }
+        }
+    } catch {
+        # Abaikan jika adapter sedang sibuk atau sudah dikonfigurasi
+    }
+
     exit 0
 }
 

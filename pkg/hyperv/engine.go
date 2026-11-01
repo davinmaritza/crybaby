@@ -122,13 +122,23 @@ func (w *windowsEngine) CreateVM(req types.CreateVMRequest) (*types.VirtualMachi
 	}
 
 	vhdPath := fmt.Sprintf(`C:\Crybaby\Disks\%s.vhdx`, req.Name)
+	isoCommand := ""
+	if req.ISOPath != "" {
+		isoCommand = fmt.Sprintf(`
+		Set-VMDvdDrive -VMName "%s" -Path "%s"
+		$dvd = Get-VMDvdDrive -VMName "%s"
+		Set-VMFirmware -VMName "%s" -FirstBootDevice $dvd
+		`, req.Name, req.ISOPath, req.Name, req.Name)
+	}
+
 	script := fmt.Sprintf(`
 		$vhdDir = "C:\Crybaby\Disks"
 		if (!(Test-Path $vhdDir)) { New-Item -ItemType Directory -Path $vhdDir -Force | Out-Null }
 		New-VM -Name "%s" -MemoryStartupBytes %dMB -NewVHDPath "%s" -NewVHDSizeBytes %dGB -Generation 2 -SwitchName "%s" | Select-Object -ExpandProperty Id
 		Set-VMProcessor -VMName "%s" -Count %d
 		Set-VM -Name "%s" -AutomaticStartAction StartIfRunning -AutomaticStopAction Save
-	`, req.Name, req.MemoryMB, vhdPath, req.DiskSizeGB, req.SwitchName, req.Name, req.CPUCount, req.Name)
+		%s
+	`, req.Name, req.MemoryMB, vhdPath, req.DiskSizeGB, req.SwitchName, req.Name, req.CPUCount, req.Name, isoCommand)
 
 	out, err := runPowerShell(script)
 	if err != nil {
