@@ -6,7 +6,7 @@ Distributed Windows 11 PC cluster orchestrator and client Hyper-V remote virtual
 [![Platform](https://img.shields.io/badge/platform-Windows%2011%20%7C%20Linux%20Mint-blue.svg)]()
 [![Virtualization](https://img.shields.io/badge/hypervisor-Client%20Hyper--V-0078D4.svg)]()
 [![Overlay Network](https://img.shields.io/badge/mesh-WireGuard%20(Curve25519)-88171A.svg)]()
-[![Release](https://img.shields.io/badge/release-v0.5.0-success.svg)]()
+[![Release](https://img.shields.io/badge/release-v0.6.0-success.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 Crybaby pools standard consumer Windows 11 PCs (Home and Pro) into a unified compute and virtualization cluster controlled from a single laptop web dashboard over a local LAN switch. It eliminates the need for expensive Windows Server licensing, dedicated server hardware, or destructive bare-metal hypervisor installations like Proxmox VE and VMware ESXi. 
@@ -24,6 +24,7 @@ Modern homelabs, software agencies, and development teams often have idle consum
 3. **Hardware Fragility:** Consumer PC power buttons are easily pressed by accident, Windows Update enforces midnight auto-restarts, and Hyper-V VMs remain stopped after a host reboot.
 4. **Networking Complexity:** Managing nodes across local LAN switches normally demands manual static IP assignments, port forwarding, or third-party cloud relays.
 5. **Generation 2 UEFI Gotchas:** Hyper-V Generation 2 VMs lack default virtual DVD drives and default to Microsoft Windows Secure Boot, causing Linux installer ISOs (Ubuntu, Debian) to fail on boot.
+6. **Virtualization Operational Gaps:** Basic Hyper-V lacks native web UI features for dynamic resizing, cloning, and unified ISO management found in Proxmox.
 
 ### Crybaby Solves Every Layer:
 
@@ -31,7 +32,11 @@ Modern homelabs, software agencies, and development teams often have idle consum
 - **Hyper-V Unlocked via DISM:** Injects underlying Hyper-V packages (`Microsoft-Hyper-V-*.mum`) and controls VMs via PowerShell WMI cmdlets.
 - **Power & Auto-Recovery Hardening:** Remaps physical casing buttons to *Do Nothing* (`PBUTTONACTION 0`), disables Modern Standby sleep, blocks midnight Windows Update auto-reboots, and sets VMs to auto-resume on boot (`StartIfRunning`).
 - **Self-Healing External Virtual Switch:** Automatically detects the active physical Ethernet NIC and creates a bridged virtual switch (`Crybaby-LAN`) so guest VMs receive router DHCP IPs.
-- **Flawless Gen 2 Linux & Windows ISO Boot:** Uses SCSI `Add-VMDvdDrive` and auto-disables Secure Boot (`-EnableSecureBoot $false`) for seamless UEFI boot on any OS.
+- **Smart ISO Catalog & Windows Node Auto-Cache:** 1-Click internet ISO downloader on controller, direct LAN distribution via `/iso/`, and auto-caching to `C:\Crybaby\ISOs` on nodes for instant offline VM provisioning.
+- **Dynamic VM Specs Resizing:** Modify vCPU core count and RAM allocation on the fly without deleting VMs or reattaching storage.
+- **Fast 1-Click VM Cloning:** Duplicate running or stopped VMs instantly with copied VHDX virtual disks and identical configuration.
+- **Virtual Disk (VHDX) Expansion:** Enlarge VM disk size safely from the dashboard via `Resize-VHD`.
+- **Visual Telemetry Sparklines:** Responsive rolling 60-second historical performance charts for cluster CPU and RAM with zero external CDN dependencies.
 - **Proxmox-Grade Checkpoints / Snapshots:** Instant point-in-time VM snapshots, rollback restoration, and deletion directly from the dashboard modal.
 - **Live VM Telemetry & 1-Click RDP:** Real-time CPU% utilization and dynamic Memory Demand indicators, plus an instant `.rdp` profile launcher button.
 - **1-Click Remote OTA Update:** Seamless Over-The-Air self-update over the local LAN without re-plugging USB flashdisks. The controller serves compiled binaries and the agent safely bypasses Windows executable file locking using detached updater scripts.
@@ -212,7 +217,12 @@ Nodes and VMs can access these files over the LAN switch via:
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/` | Serves the embedded single-page management dashboard. |
-| `GET` | `/iso/*` | Static HTTP ISO repository file server. |
+| `GET` | `/iso/*` | Static HTTP ISO repository file server for LAN distribution. |
+| `GET` | `/api/v1/iso` | Lists all cached ISO installation images on the controller. |
+| `POST` | `/api/v1/iso/download` | Initiates background download of an ISO image from an HTTP/HTTPS URL. |
+| `GET` | `/api/v1/iso/downloads` | Returns live status and progress of ongoing ISO downloads. |
+| `GET` | `/api/v1/cluster/status` | Returns aggregated cluster health and resource capacity. |
+| `GET` | `/api/v1/cluster/history` | Returns 60-second rolling telemetry points for sparkline graphs. |
 | `GET` | `/api/v1/binaries/crybaby-agent.exe` | Serves compiled Windows agent binary for remote OTA updates. |
 | `POST` | `/api/v1/auth/login` | Authenticates administrator session and issues token. |
 | `POST` | `/api/v1/cluster/reset` | Purges all nodes from cluster registry and clears state. |
@@ -225,8 +235,11 @@ Nodes and VMs can access these files over the LAN switch via:
 | `POST` | `/api/v1/nodes/:id/reboot` | Triggers graceful remote reboot on physical Windows host. |
 | `POST` | `/api/v1/nodes/:id/shutdown` | Triggers graceful remote shutdown on physical Windows host. |
 | `GET` | `/api/v1/nodes/:id/vms` | Lists all Hyper-V virtual machines with metrics & IP. |
-| `POST` | `/api/v1/nodes/:id/vms` | Creates a new Generation 2 Hyper-V VM with optional ISO. |
+| `POST` | `/api/v1/nodes/:id/vms` | Creates a new Generation 2 Hyper-V VM with auto ISO cache. |
 | `POST` | `/api/v1/nodes/:id/vms/:vm_id/:action` | Executes power action (`start`, `stop`, `restart`) on VM. |
+| `POST` | `/api/v1/nodes/:id/vms/:vm_id/resize` | Dynamically resizes vCPU cores and RAM allocation. |
+| `POST` | `/api/v1/nodes/:id/vms/:vm_id/expand-disk` | Expands virtual hard disk (VHDX) capacity in GB. |
+| `POST` | `/api/v1/nodes/:id/vms/:vm_id/clone` | Creates an instant duplicate VM with copied disk VHDX. |
 | `DELETE` | `/api/v1/nodes/:id/vms/:vm_id` | Deletes the VM and purges its attached VHDX virtual disk. |
 | `GET` | `/api/v1/nodes/:id/vms/:vm_id/checkpoints` | Lists all Hyper-V checkpoints/snapshots for a VM. |
 | `POST` | `/api/v1/nodes/:id/vms/:vm_id/checkpoints` | Creates a new point-in-time checkpoint for a VM. |
@@ -238,7 +251,7 @@ Nodes and VMs can access these files over the LAN switch via:
 
 ### WebSocket Endpoints
 
-- `GET /api/v1/ws/telemetry`: Real-time JSON stream of cluster health, CPU/RAM utilization, and node telemetry.
+- `GET /api/v1/ws/telemetry`: Real-time JSON stream of cluster health, CPU/RAM utilization, sparkline history, and node telemetry.
 - `GET /api/v1/ws/terminal/:node_id`: Bidirectional PTY stream connecting the browser xterm.js instance to the node PowerShell session.
 
 ---
@@ -253,10 +266,12 @@ go test -v ./...
 
 Test coverage includes:
 - `pkg/auth`: Password hashing with salt, constant-time verification, and token authentication.
-- `pkg/cluster`: Node registration, MAC deduplication, summary aggregation, and offline node reaper.
-- `pkg/hyperv`: VM creation, name collision handling, power state transitions, virtual switch auto-creation, and full checkpoint/snapshot lifecycle (Create, List, Restore, Delete).
+- `pkg/cluster`: Node registration, MAC deduplication, summary aggregation, offline reaper, and `HistoryBuffer` rolling telemetry window.
+- `pkg/hyperv`: VM creation, name collision handling, power state transitions, virtual switch auto-creation, checkpoint snapshot lifecycle, dynamic specs resizing, virtual disk VHDX expansion, and VM cloning.
+- `pkg/iso`: Local ISO discovery, thread-safe background download tracking, path sanitization, and progress reporting.
 - `pkg/mesh`: Curve25519 key generation and WireGuard client peer configuration.
 - `pkg/terminal`: Shell process spawning, WebSocket pipe streaming, input forwarding, and clean session termination.
+- `pkg/updater`: OTA executable replacement, hash/size validation, and lock-bypassing script generation.
 
 ---
 

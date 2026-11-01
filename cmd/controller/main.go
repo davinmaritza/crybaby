@@ -20,18 +20,21 @@ import (
 
 	"github.com/davinmaritza/crybaby/pkg/auth"
 	"github.com/davinmaritza/crybaby/pkg/cluster"
+	"github.com/davinmaritza/crybaby/pkg/iso"
 	"github.com/davinmaritza/crybaby/pkg/mesh"
 	"github.com/davinmaritza/crybaby/pkg/types"
 	"github.com/gorilla/websocket"
 )
 
-const ControllerVersion = "0.5.0"
+const ControllerVersion = "0.6.0"
 
 type Server struct {
 	registry     *cluster.Registry
 	auth         *auth.Authenticator
 	hub          *Hub
 	meshKey      *mesh.KeyPair
+	isoMgr       *iso.Manager
+	history      *cluster.HistoryBuffer
 	port         string
 	clusterToken string
 }
@@ -68,6 +71,8 @@ func main() {
 
 	go hub.Run()
 
+	history := cluster.NewHistoryBuffer(30)
+
 	// Background node reaper (every 5 seconds, timeout at 15s)
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -84,19 +89,29 @@ func main() {
 		for range ticker.C {
 			summary := registry.GetClusterSummary()
 			nodes := registry.ListNodes()
+			var ramPct float64
+			if summary.TotalRAMBytes > 0 {
+				ramPct = (float64(summary.UsedRAMBytes) / float64(summary.TotalRAMBytes)) * 100.0
+			}
+			history.Add(summary.AvgCPUUsagePct, ramPct)
 			hub.BroadcastJSON(map[string]interface{}{
 				"type":    "telemetry_tick",
 				"summary": summary,
 				"nodes":   nodes,
+				"history": history.GetPoints(),
 			})
 		}
 	}()
+
+	isoMgr := iso.NewManager("./iso")
 
 	srv := &Server{
 		registry:     registry,
 		auth:         authenticator,
 		hub:          hub,
 		meshKey:      meshKey,
+		isoMgr:       isoMgr,
+		history:      history,
 		port:         *port,
 		clusterToken: *clusterToken,
 	}
@@ -120,6 +135,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/auth/login", s.handleLogin)
 	mux.HandleFunc("/api/v1/cluster/status", s.handleClusterStatus)
+	mux.HandleFunc("/api/v1/cluster/history", s.handleClusterHistory)
 	mux.HandleFunc("/api/v1/nodes", s.handleNodes)
 	mux.HandleFunc("/api/v1/nodes/register", s.handleRegisterNode)
 	mux.HandleFunc("/api/v1/nodes/", s.handleNodeSubroutes)
@@ -129,6 +145,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/ws/telemetry", s.handleWebSocketTelemetry)
 	mux.HandleFunc("/api/v1/ws/terminal/", s.handleWebSocketTerminalProxy)
 	mux.HandleFunc("/api/v1/binaries/crybaby-agent.exe", s.handleServeAgentBinary)
+	mux.HandleFunc("/api/v1/iso", s.handleListISOs)
+	mux.HandleFunc("/api/v1/iso/download", s.handleDownloadISO)
+	mux.HandleFunc("/api/v1/iso/downloads", s.handleListISODownloads)
 
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")
@@ -185,6 +204,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
 	summary := s.registry.GetClusterSummary()
 	jsonResponse(w, http.StatusOK, summary)
+}
+
+func (s *Server) handleClusterHistory(w http.ResponseWriter, r *http.Request) {
+	points := s.history.GetPoints()
+	jsonResponse(w, http.StatusOK, points)
 }
 
 func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
@@ -523,6 +547,41 @@ func (s *Server) handleServeAgentBinary(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", `attachment; filename="crybaby-agent.exe"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, binPath)
+}
+
+func (s *Server) handleListISOs(w http.ResponseWriter, r *http.Request) {
+	list, err := s.isoMgr.List()
+	if err != nil {
+		jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, http.StatusOK, list)
+}
+
+func (s *Server) handleDownloadISO(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	var req struct {
+		URL      string `json:"url"`
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid request JSON"})
+		return
+	}
+	job, err := s.isoMgr.StartDownload(req.URL, req.Filename)
+	if err != nil {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	jsonResponse(w, http.StatusAccepted, job)
+}
+
+func (s *Server) handleListISODownloads(w http.ResponseWriter, r *http.Request) {
+	jobs := s.isoMgr.ListJobs()
+	jsonResponse(w, http.StatusOK, jobs)
 }
 
 func (s *Server) handleWebSocketTelemetry(w http.ResponseWriter, r *http.Request) {

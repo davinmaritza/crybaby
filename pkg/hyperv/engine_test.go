@@ -121,4 +121,35 @@ func TestHyperVEngineLifecycle(t *testing.T) {
 	if err != nil || len(cpsAfter) != 0 {
 		t.Fatalf("expected 0 checkpoints after deletion, got %d", len(cpsAfter))
 	}
+
+	// 10. Test ResizeVM
+	if err := engine.ResizeVM(demoVM.ID, 8, 16384); err != nil {
+		t.Fatalf("failed to resize VM: %v", err)
+	}
+	resizedVM, _ := engine.GetVM(demoVM.ID)
+	if resizedVM.CPUCount != 8 || resizedVM.MemoryMB != 16384 {
+		t.Errorf("expected 8 CPUs and 16384 MB RAM, got %d CPUs and %d MB", resizedVM.CPUCount, resizedVM.MemoryMB)
+	}
+
+	// 11. Test ExpandDisk
+	origGB := demoVM.DiskSizeBytes / (1024 * 1024 * 1024)
+	if err := engine.ExpandDisk(demoVM.ID, origGB+50); err != nil {
+		t.Fatalf("failed to expand disk: %v", err)
+	}
+	expandedVM, _ := engine.GetVM(demoVM.ID)
+	if expandedVM.DiskSizeBytes != (origGB+50)*1024*1024*1024 {
+		t.Errorf("expected expanded disk size %d GB, got %d GB", origGB+50, expandedVM.DiskSizeBytes/(1024*1024*1024))
+	}
+
+	// 12. Test CloneVM
+	clonedVM, err := engine.CloneVM(demoVM.ID, "demo-vm-clone")
+	if err != nil {
+		t.Fatalf("failed to clone VM: %v", err)
+	}
+	if clonedVM.Name != "demo-vm-clone" {
+		t.Errorf("expected clone name 'demo-vm-clone', got '%s'", clonedVM.Name)
+	}
+	if clonedVM.CPUCount != expandedVM.CPUCount || clonedVM.MemoryMB != expandedVM.MemoryMB {
+		t.Errorf("expected clone specs to match source VM")
+	}
 }

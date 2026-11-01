@@ -33,3 +33,11 @@ type USBProvisionProfile struct {
 	ClusterName   string `json:"cluster_name"`
 	CreatedAt     string `json:"created_at"`
 }
+
+// TelemetryPoint represents a single cluster performance snapshot in time.
+type TelemetryPoint struct {
+	Timestamp int64   `json:"timestamp"`
+	CPU       float64 `json:"cpu"`
+	RAMPct    float64 `json:"ram_pct"`
+}
+

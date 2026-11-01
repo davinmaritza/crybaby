@@ -23,7 +23,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const AgentVersion = "0.5.0"
+const AgentVersion = "0.6.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -254,6 +254,52 @@ func startAgentRPCServer(port int, hv hyperv.Engine) {
 				return
 			}
 			http.Error(w, "Unknown checkpoint action", http.StatusNotFound)
+		case "resize":
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var req types.ResizeVMRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid resize request JSON", http.StatusBadRequest)
+				return
+			}
+			if err := hv.ResizeVM(vmID, req.CPUCount, req.MemoryMB); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]string{"status": "resized"})
+		case "expand-disk":
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var req types.ExpandDiskRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid expand disk request JSON", http.StatusBadRequest)
+				return
+			}
+			if err := hv.ExpandDisk(vmID, req.NewSizeGB); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]string{"status": "expanded"})
+		case "clone":
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var req types.CloneVMRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid clone request JSON", http.StatusBadRequest)
+				return
+			}
+			clonedVM, err := hv.CloneVM(vmID, req.NewName)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jsonResponse(w, http.StatusCreated, clonedVM)
 		default:
 			http.Error(w, "Unknown VM action", http.StatusNotFound)
 		}

@@ -28,6 +28,9 @@ type Engine interface {
 	ListCheckpoints(vmID string) ([]types.VMCheckpoint, error)
 	RestoreCheckpoint(vmID, name string) error
 	DeleteCheckpoint(vmID, name string) error
+	ResizeVM(vmID string, cpuCount int, memoryMB uint64) error
+	ExpandDisk(vmID string, newSizeGB uint64) error
+	CloneVM(sourceVMID, newVMName string) (*types.VirtualMachine, error)
 }
 
 // NewEngine returns a platform-appropriate Hyper-V engine.
@@ -153,11 +156,28 @@ func (w *windowsEngine) CreateVM(req types.CreateVMRequest) (*types.VirtualMachi
 	vhdPath := fmt.Sprintf(`C:\Crybaby\Disks\%s.vhdx`, req.Name)
 	isoCommand := ""
 	if req.ISOPath != "" {
-		isoCommand = fmt.Sprintf(`
+		if strings.HasPrefix(req.ISOPath, "http://") || strings.HasPrefix(req.ISOPath, "https://") {
+			isoCommand = fmt.Sprintf(`
+		$isoUrl = "%s"
+		$isoDir = "C:\Crybaby\ISOs"
+		if (!(Test-Path $isoDir)) { New-Item -ItemType Directory -Path $isoDir -Force | Out-Null }
+		$rawName = [System.IO.Path]::GetFileName($isoUrl.Split('?')[0])
+		if (!$rawName -or $rawName -eq "") { $rawName = "installer.iso" }
+		$localIso = Join-Path $isoDir $rawName
+		if (!(Test-Path $localIso)) {
+			Invoke-WebRequest -Uri $isoUrl -OutFile $localIso -UseBasicParsing
+		}
+		Add-VMDvdDrive -VMName "%s" -Path $localIso
+		$dvd = Get-VMDvdDrive -VMName "%s"
+		Set-VMFirmware -VMName "%s" -FirstBootDevice $dvd -EnableSecureBoot $false
+		`, req.ISOPath, req.Name, req.Name, req.Name)
+		} else {
+			isoCommand = fmt.Sprintf(`
 		Add-VMDvdDrive -VMName "%s" -Path "%s"
 		$dvd = Get-VMDvdDrive -VMName "%s"
 		Set-VMFirmware -VMName "%s" -FirstBootDevice $dvd -EnableSecureBoot $false
 		`, req.Name, req.ISOPath, req.Name, req.Name)
+		}
 	}
 
 	script := fmt.Sprintf(`
@@ -372,6 +392,91 @@ func (w *windowsEngine) DeleteCheckpoint(vmID, name string) error {
 		return fmt.Errorf("failed to delete checkpoint: %w (%s)", err, out)
 	}
 	return nil
+}
+
+func (w *windowsEngine) ResizeVM(vmID string, cpuCount int, memoryMB uint64) error {
+	if cpuCount <= 0 {
+		return errors.New("CPU count must be at least 1")
+	}
+	if memoryMB < 512 {
+		return errors.New("memory must be at least 512 MB")
+	}
+	script := fmt.Sprintf(`
+		$vm = Get-VM -Id "%s"
+		if (!$vm) { throw "VM not found" }
+		$wasRunning = ($vm.State -eq 'Running')
+		if ($wasRunning) {
+			Stop-VM -VM $vm -Force
+		}
+		Set-VMProcessor -VM $vm -Count %d
+		Set-VMMemory -VM $vm -StartupBytes %dMB
+		if ($wasRunning) {
+			Start-VM -VM $vm
+		}
+	`, vmID, cpuCount, memoryMB)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return fmt.Errorf("failed to resize VM: %w (%s)", err, out)
+	}
+	return nil
+}
+
+func (w *windowsEngine) ExpandDisk(vmID string, newSizeGB uint64) error {
+	if newSizeGB == 0 {
+		return errors.New("new disk size must be greater than 0")
+	}
+	script := fmt.Sprintf(`
+		$vm = Get-VM -Id "%s"
+		if (!$vm) { throw "VM not found" }
+		$vhd = Get-VMHardDiskDrive -VM $vm | Select-Object -First 1
+		if (!$vhd -or !$vhd.Path) { throw "No hard disk attached to VM" }
+		Resize-VHD -Path $vhd.Path -SizeBytes %dGB
+	`, vmID, newSizeGB)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return fmt.Errorf("failed to expand VM disk: %w (%s)", err, out)
+	}
+	return nil
+}
+
+func (w *windowsEngine) CloneVM(sourceVMID, newVMName string) (*types.VirtualMachine, error) {
+	if newVMName == "" {
+		return nil, errors.New("new VM name cannot be empty")
+	}
+	script := fmt.Sprintf(`
+		$src = Get-VM -Id "%s"
+		if (!$src) { throw "Source VM not found" }
+		$existing = Get-VM -Name "%s" -ErrorAction SilentlyContinue
+		if ($existing) { throw "A VM named '%s' already exists" }
+		$srcVhd = (Get-VMHardDiskDrive -VM $src | Select-Object -First 1).Path
+		$vhdDir = "C:\Crybaby\Disks"
+		if (!(Test-Path $vhdDir)) { New-Item -ItemType Directory -Path $vhdDir -Force | Out-Null }
+		$newVhd = Join-Path $vhdDir "%s.vhdx"
+		if ($srcVhd -and (Test-Path $srcVhd)) {
+			Copy-Item -Path $srcVhd -Destination $newVhd -Force
+		} else {
+			New-VHD -Path $newVhd -SizeBytes 32GB -Dynamic | Out-Null
+		}
+		$switch = (Get-VMNetworkAdapter -VM $src | Select-Object -First 1).SwitchName
+		if (!$switch) { $switch = "Crybaby-LAN" }
+		$newVM = New-VM -Name "%s" -MemoryStartupBytes $src.MemoryStartup -VHDPath $newVhd -Generation $src.Generation -SwitchName $switch
+		Set-VMProcessor -VM $newVM -Count $src.ProcessorCount
+		Set-VM -VM $newVM -AutomaticStartAction StartIfRunning -AutomaticStopAction Save
+		$newVM | Select-Object -ExpandProperty Id
+	`, sourceVMID, newVMName, newVMName, newVMName, newVMName)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return nil, fmt.Errorf("failed to clone VM: %w (%s)", err, out)
+	}
+	newID := strings.TrimSpace(out)
+	return &types.VirtualMachine{
+		ID:            newID,
+		NodeID:        w.nodeID,
+		Name:          newVMName,
+		State:         types.VMStateStopped,
+		DiskPath:      fmt.Sprintf(`C:\Crybaby\Disks\%s.vhdx`, newVMName),
+		CreatedAt:     time.Now().UTC(),
+	}, nil
 }
 
 func runPowerShell(command string) (string, error) {
@@ -605,4 +710,72 @@ func (s *simulatedEngine) DeleteCheckpoint(vmID, name string) error {
 		}
 	}
 	return fmt.Errorf("checkpoint '%s' not found", name)
+}
+
+func (s *simulatedEngine) ResizeVM(vmID string, cpuCount int, memoryMB uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vm, exists := s.vms[vmID]
+	if !exists {
+		return fmt.Errorf("VM '%s' not found", vmID)
+	}
+	if cpuCount <= 0 {
+		return errors.New("CPU count must be at least 1")
+	}
+	if memoryMB < 512 {
+		return errors.New("memory must be at least 512 MB")
+	}
+	vm.CPUCount = cpuCount
+	vm.MemoryMB = memoryMB
+	return nil
+}
+
+func (s *simulatedEngine) ExpandDisk(vmID string, newSizeGB uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vm, exists := s.vms[vmID]
+	if !exists {
+		return fmt.Errorf("VM '%s' not found", vmID)
+	}
+	if newSizeGB == 0 {
+		return errors.New("new disk size must be greater than 0")
+	}
+	newBytes := newSizeGB * 1024 * 1024 * 1024
+	if newBytes <= vm.DiskSizeBytes {
+		return fmt.Errorf("new size (%d GB) must be larger than current size (%d GB)", newSizeGB, vm.DiskSizeBytes/(1024*1024*1024))
+	}
+	vm.DiskSizeBytes = newBytes
+	return nil
+}
+
+func (s *simulatedEngine) CloneVM(sourceVMID, newVMName string) (*types.VirtualMachine, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	src, exists := s.vms[sourceVMID]
+	if !exists {
+		return nil, fmt.Errorf("source VM '%s' not found", sourceVMID)
+	}
+	if newVMName == "" {
+		return nil, errors.New("new VM name cannot be empty")
+	}
+	for _, existing := range s.vms {
+		if strings.EqualFold(existing.Name, newVMName) {
+			return nil, fmt.Errorf("a VM named '%s' already exists", newVMName)
+		}
+	}
+	newID := fmt.Sprintf("vm-%d", time.Now().UnixNano()%1000000)
+	clone := &types.VirtualMachine{
+		ID:            newID,
+		NodeID:        s.nodeID,
+		Name:          newVMName,
+		State:         types.VMStateStopped,
+		CPUCount:      src.CPUCount,
+		MemoryMB:      src.MemoryMB,
+		DiskPath:      fmt.Sprintf(`C:\Crybaby\Disks\%s.vhdx`, newVMName),
+		DiskSizeBytes: src.DiskSizeBytes,
+		CreatedAt:     time.Now().UTC(),
+	}
+	s.vms[newID] = clone
+	cp := *clone
+	return &cp, nil
 }

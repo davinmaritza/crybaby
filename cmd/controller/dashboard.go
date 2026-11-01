@@ -78,6 +78,10 @@ const dashboardHTML = `<!DOCTYPE html>
             <button onclick="resetCluster()" title="Kosongkan semua node dan mulai fresh" class="px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-red-500/10 text-gray-400 hover:text-red-400 border border-gray-800 hover:border-red-500/30 text-xs font-semibold flex items-center gap-1.5 transition">
                 <i class="fa-solid fa-eraser"></i> Reset / Fresh
             </button>
+            <button onclick="openISOCatalogModal()" title="Katalog ISO &amp; Download Installer OS" class="px-3.5 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 text-gray-200 border border-gray-800 hover:border-gray-700 text-xs font-semibold flex items-center gap-2 transition">
+                <i class="fa-solid fa-compact-disc text-indigo-400"></i>
+                ISO Catalog
+            </button>
             <button onclick="openUSBModal()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-indigo-600/20">
                 <i class="fa-solid fa-usb"></i>
                 Generate Node USB
@@ -119,6 +123,13 @@ const dashboardHTML = `<!DOCTYPE html>
                 <div class="w-full bg-gray-800 h-1.5 rounded-full mt-3 overflow-hidden">
                     <div id="barCPU" class="bg-indigo-500 h-full w-0 transition-all duration-500"></div>
                 </div>
+                <div class="mt-2.5 pt-2 border-t border-gray-800/50">
+                    <div class="flex justify-between text-[10px] text-gray-400 mb-1">
+                        <span>Trend (60s)</span>
+                        <span id="cpuTrendVal" class="text-indigo-400 font-mono">0.0%</span>
+                    </div>
+                    <canvas id="cpuSparkline" class="w-full h-8 block rounded" height="32" width="220"></canvas>
+                </div>
             </div>
 
             <div class="glass p-5 rounded-xl border border-gray-800/80">
@@ -133,6 +144,13 @@ const dashboardHTML = `<!DOCTYPE html>
                 </div>
                 <div class="w-full bg-gray-800 h-1.5 rounded-full mt-3 overflow-hidden">
                     <div id="barRAM" class="bg-blue-500 h-full w-0 transition-all duration-500"></div>
+                </div>
+                <div class="mt-2.5 pt-2 border-t border-gray-800/50">
+                    <div class="flex justify-between text-[10px] text-gray-400 mb-1">
+                        <span>Trend (60s)</span>
+                        <span id="ramTrendVal" class="text-blue-400 font-mono">0.0%</span>
+                    </div>
+                    <canvas id="ramSparkline" class="w-full h-8 block rounded" height="32" width="220"></canvas>
                 </div>
             </div>
 
@@ -281,9 +299,17 @@ const dashboardHTML = `<!DOCTYPE html>
                             <input id="vmDisk" name="disk_size_gb" type="number" min="10" max="2000" value="40" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
                         </div>
                         <div class="md:col-span-2">
-                            <label for="vmISO" class="block text-gray-400 mb-1">Path File ISO Installer (Opsional)</label>
-                            <input id="vmISO" name="iso_path" type="text" autocomplete="off" placeholder="e.g. C:\ISO\ubuntu-24.04-live-server.iso" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
-                            <p class="text-[11px] text-gray-400 mt-1"><i class="fa-solid fa-server text-indigo-400 mr-1"></i>ISO dapat disimpan di folder <code>iso/</code> controller laptop dan diunduh via LAN.</p>
+                            <div class="flex justify-between items-center mb-1">
+                                <label for="vmISOSelect" class="block text-gray-400">Pilih ISO Installer (ISO Repository Controller)</label>
+                                <button type="button" onclick="openISOCatalogModal()" class="text-[11px] text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1">
+                                    <i class="fa-solid fa-cloud-arrow-down"></i> Unduh ISO Baru dari URL
+                                </button>
+                            </div>
+                            <select id="vmISOSelect" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none text-xs" onchange="syncISOInput(this.value)">
+                                <option value="">-- Tanpa ISO (Boot dari VHDX kosong) --</option>
+                            </select>
+                            <input id="vmISO" name="iso_path" type="text" autocomplete="off" placeholder="Atau ketik custom path / URL (e.g. http://.../ubuntu.iso atau C:\ISO\win.iso)" class="w-full bg-gray-950/70 border border-gray-800 rounded-lg px-3 py-1.5 text-gray-300 font-mono focus:border-indigo-500 focus:outline-none text-xs mt-1.5">
+                            <p class="text-[11px] text-gray-400 mt-1"><i class="fa-solid fa-bolt text-amber-400 mr-1"></i>Otomatis di-cache ke <code>C:\Crybaby\ISOs</code> pada Windows node jika menggunakan link HTTP.</p>
                         </div>
                     </div>
                     <div class="flex justify-end">
@@ -389,6 +415,179 @@ const dashboardHTML = `<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- ISO Catalog & Download Modal -->
+    <div id="isoCatalogModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-3xl w-full rounded-2xl border border-gray-700 p-5 space-y-4 shadow-2xl max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-compact-disc text-indigo-400"></i>
+                        Controller ISO Repository &amp; Downloader
+                    </h3>
+                    <p class="text-xs text-gray-400">Penyimpanan ISO lokal controller untuk instalasi VM via LAN tanpa internet di node</p>
+                </div>
+                <button onclick="closeISOCatalogModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+
+            <!-- Download ISO from URL form -->
+            <form id="downloadISOForm" class="bg-gray-900/70 p-3.5 rounded-xl border border-gray-800 space-y-2.5 text-xs" onsubmit="submitDownloadISO(event)">
+                <div class="font-semibold text-gray-200 flex items-center gap-1.5">
+                    <i class="fa-solid fa-cloud-arrow-down text-indigo-400"></i> Unduh ISO dari URL Internet ke Controller:
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div class="md:col-span-2">
+                        <input id="isoDownloadURL" type="url" required placeholder="https://releases.ubuntu.com/24.04/ubuntu-24.04-live-server.iso" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <input id="isoDownloadFilename" type="text" placeholder="ubuntu-24.04.iso (opsional)" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+                <div class="flex justify-between items-center pt-1">
+                    <span class="text-[11px] text-gray-400"><i class="fa-solid fa-folder-open text-indigo-400 mr-1"></i>Tersimpan di direktori <code>./iso</code> controller</span>
+                    <button type="submit" id="btnStartISODownload" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center gap-1.5">
+                        <i class="fa-solid fa-download"></i> Mulai Download ISO
+                    </button>
+                </div>
+                <!-- Active Downloads Progress list -->
+                <div id="isoDownloadsList" class="hidden space-y-2 pt-2 border-t border-gray-800/60 font-mono text-[11px]"></div>
+            </form>
+
+            <!-- ISO List Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="uppercase bg-gray-950/80 text-gray-400 border-b border-gray-800">
+                        <tr>
+                            <th class="px-3 py-2">Nama Berkas ISO</th>
+                            <th class="px-3 py-2">Ukuran</th>
+                            <th class="px-3 py-2">Waktu Modifikasi</th>
+                            <th class="px-3 py-2 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="isoTableBody" class="divide-y divide-gray-800/40 font-mono">
+                        <tr>
+                            <td colspan="4" class="px-3 py-4 text-center text-gray-500">Memuat berkas ISO...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex justify-end pt-2 border-t border-gray-800">
+                <button onclick="closeISOCatalogModal()" class="px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resize VM Modal -->
+    <div id="resizeVMModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-md w-full rounded-2xl border border-gray-700 p-5 space-y-4 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-indigo-400"></i>
+                        Ubah Alokasi Spek VM &bull; <span id="resizeVMTitle" class="text-indigo-400">VM</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">Ubah jumlah vCPU Cores &amp; RAM tanpa merusak disk VHDX</p>
+                </div>
+                <button onclick="closeResizeModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+
+            <form id="resizeVMForm" class="space-y-3 text-xs" onsubmit="submitResizeVM(event)">
+                <div>
+                    <label for="resizeCoresInput" class="block text-gray-400 mb-1">Jumlah vCPU Cores:</label>
+                    <input id="resizeCoresInput" type="number" min="1" max="64" required class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label for="resizeRAMInput" class="block text-gray-400 mb-1">Alokasi RAM (MB):</label>
+                    <input id="resizeRAMInput" type="number" min="512" step="512" max="131072" required class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                    <p class="text-[11px] text-gray-500 mt-1">Contoh: 2048 (2 GB), 4096 (4 GB), 8192 (8 GB), 16384 (16 GB)</p>
+                </div>
+
+                <div class="bg-amber-950/30 border border-amber-500/20 rounded-xl p-3 text-[11px] text-amber-300/90 leading-relaxed">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-400 mr-1"></i>
+                    Hyper-V mengharuskan CPU diubah saat VM mati. Jika VM sedang RUNNING, Crybaby akan mematikan VM sementara, menerapkan spek baru, dan menyalakan kembali secara otomatis.
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-gray-800">
+                    <button type="button" onclick="closeResizeModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Batal</button>
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5">
+                        <i class="fa-solid fa-check"></i> Terapkan Spek Baru
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Expand Disk Modal -->
+    <div id="expandDiskModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-md w-full rounded-2xl border border-gray-700 p-5 space-y-4 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-hard-drive text-teal-400"></i>
+                        Perbesar Hard Disk VHDX &bull; <span id="expandDiskTitle" class="text-teal-400">VM</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">Ekspansi kapasitas virtual disk VHDX Hyper-V</p>
+                </div>
+                <button onclick="closeExpandDiskModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+
+            <form id="expandDiskForm" class="space-y-3 text-xs" onsubmit="submitExpandDisk(event)">
+                <div>
+                    <label for="expandSizeInput" class="block text-gray-400 mb-1">Ukuran Baru Hard Disk (GB):</label>
+                    <input id="expandSizeInput" type="number" min="10" max="16000" required class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-teal-500 focus:outline-none">
+                    <p class="text-[11px] text-gray-500 mt-1">Harus lebih besar dari kapasitas VHDX saat ini (Hyper-V hanya mendukung pembesaran ukuran).</p>
+                </div>
+
+                <div class="bg-teal-950/30 border border-teal-500/20 rounded-xl p-3 text-[11px] text-teal-300/90 leading-relaxed">
+                    <i class="fa-solid fa-circle-info text-teal-400 mr-1"></i>
+                    Setelah disk VHDX diperbesar, ruang ekstra dapat dialokasikan di dalam OS guest via <b>Disk Management</b> (Windows) atau <code>growpart &amp; resize2fs</code> (Linux).
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-gray-800">
+                    <button type="button" onclick="closeExpandDiskModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Batal</button>
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-xs font-semibold text-white flex items-center gap-1.5">
+                        <i class="fa-solid fa-up-right-and-down-left-from-center"></i> Perbesar Disk Sekarang
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Clone VM Modal -->
+    <div id="cloneVMModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-md w-full rounded-2xl border border-gray-700 p-5 space-y-4 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-clone text-sky-400"></i>
+                        Clone Virtual Machine &bull; <span id="cloneVMTitle" class="text-sky-400">VM</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">Duplikasi VM secara instan beserta disk VHDX nya</p>
+                </div>
+                <button onclick="closeCloneModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+
+            <form id="cloneVMForm" class="space-y-3 text-xs" onsubmit="submitCloneVM(event)">
+                <div>
+                    <label for="cloneNameInput" class="block text-gray-400 mb-1">Nama VM Kloning Baru:</label>
+                    <input id="cloneNameInput" type="text" required placeholder="e.g. vm-clone-worker-02" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-sky-500 focus:outline-none">
+                </div>
+
+                <div class="bg-sky-950/30 border border-sky-500/20 rounded-xl p-3 text-[11px] text-sky-300/90 leading-relaxed">
+                    <i class="fa-solid fa-copy text-sky-400 mr-1"></i>
+                    Crybaby akan menyalin file VHDX sumber ke direktori VM baru dan mendaftarkan konfigurasi CPU, RAM, serta Switch yang identik.
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-gray-800">
+                    <button type="button" onclick="closeCloneModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Batal</button>
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white flex items-center gap-1.5">
+                        <i class="fa-solid fa-clone"></i> Mulai Kloning VM
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         async function openUSBModal() { 
             try {
@@ -471,6 +670,7 @@ const dashboardHTML = `<!DOCTYPE html>
                 const data = JSON.parse(e.data);
                 if (data.summary) updateSummary(data.summary);
                 if (data.nodes) renderNodes(data.nodes);
+                if (data.history) renderHistory(data.history);
             };
             ws.onclose = () => {
                 document.getElementById('wsStatus').innerText = 'WS RECONNECTING';
@@ -497,7 +697,54 @@ const dashboardHTML = `<!DOCTYPE html>
             document.getElementById('statVMs').innerText = s.total_active_vms || 0;
         }
 
-        const CONTROLLER_VERSION = '0.5.0';
+        function renderHistory(points) {
+            if (!points || points.length === 0) return;
+            drawSparkline('cpuSparkline', points, 'cpu', '#818cf8', 'rgba(99, 102, 241, 0.2)');
+            drawSparkline('ramSparkline', points, 'ram_pct', '#60a5fa', 'rgba(59, 130, 246, 0.2)');
+            const latest = points[points.length - 1];
+            if (document.getElementById('cpuTrendVal')) document.getElementById('cpuTrendVal').innerText = (latest.cpu || 0).toFixed(1) + '%';
+            if (document.getElementById('ramTrendVal')) document.getElementById('ramTrendVal').innerText = (latest.ram_pct || 0).toFixed(1) + '%';
+        }
+
+        function drawSparkline(canvasId, points, key, lineColor, fillColor) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            ctx.clearRect(0, 0, width, height);
+
+            if (!points || points.length === 0) return;
+
+            const values = points.map(p => p[key] || 0);
+            let maxVal = 100;
+            for (const v of values) { if (v > maxVal) maxVal = v; }
+            const minVal = 0;
+
+            const stepX = width / Math.max(1, points.length - 1);
+
+            ctx.beginPath();
+            const firstY = height - ((values[0] - minVal) / (maxVal - minVal || 1)) * (height - 6) - 3;
+            ctx.moveTo(0, firstY);
+
+            for (let i = 1; i < values.length; i++) {
+                const x = i * stepX;
+                const y = height - ((values[i] - minVal) / (maxVal - minVal || 1)) * (height - 6) - 3;
+                ctx.lineTo(x, y);
+            }
+
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.lineTo(width, height);
+            ctx.lineTo(0, height);
+            ctx.closePath();
+            ctx.fillStyle = fillColor;
+            ctx.fill();
+        }
+
+        const CONTROLLER_VERSION = '0.6.0';
 
         function updateNode(nodeId, nodeName) {
             if (!confirm('Update Crybaby Agent pada node \"' + nodeName + '\" ke versi terbaru (v' + CONTROLLER_VERSION + ') via OTA over LAN?\n\nAgent akan mengunduh biner baru dari laptop controller dan me-restart service otomatis dalam 2-3 detik.')) {
@@ -576,6 +823,7 @@ const dashboardHTML = `<!DOCTYPE html>
             document.getElementById('vmModal').classList.remove('hidden');
             loadVMs(nodeId);
             loadSwitches(nodeId);
+            loadISODropdown();
         }
 
         function closeVMModal() {
@@ -593,6 +841,30 @@ const dashboardHTML = `<!DOCTYPE html>
                 form.classList.add('hidden');
                 chev.classList.remove('rotate-180');
             }
+        }
+
+        function loadISODropdown() {
+            fetch('/api/v1/iso')
+                .then(r => r.json())
+                .then(isos => {
+                    const sel = document.getElementById('vmISOSelect');
+                    if (!sel) return;
+                    sel.innerHTML = '<option value=\"\">-- Tanpa ISO (Boot dari VHDX kosong) --</option>';
+                    (isos || []).forEach(iso => {
+                        const opt = document.createElement('option');
+                        const url = 'http://' + window.location.host + '/iso/' + encodeURIComponent(iso.name);
+                        const mb = (iso.size_bytes / (1024 * 1024)).toFixed(1);
+                        opt.value = url;
+                        opt.innerText = iso.name + ' (' + mb + ' MB)';
+                        sel.appendChild(opt);
+                    });
+                })
+                .catch(() => {});
+        }
+
+        function syncISOInput(val) {
+            const input = document.getElementById('vmISO');
+            if (input) input.value = val;
         }
 
         function loadSwitches(nodeId) {
@@ -651,6 +923,9 @@ const dashboardHTML = `<!DOCTYPE html>
                                     ? '<button onclick=\"controlVM(\'' + vm.id + '\', \'start\')\" class=\"px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition\" title=\"Start VM\"><i class=\"fa-solid fa-play\"></i></button>'
                                     : '<button onclick=\"controlVM(\'' + vm.id + '\', \'stop\')\" class=\"px-2 py-1 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition\" title=\"Stop VM\"><i class=\"fa-solid fa-stop\"></i></button>' +
                                       '<button onclick=\"controlVM(\'' + vm.id + '\', \'restart\')\" class=\"px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition\" title=\"Restart VM\"><i class=\"fa-solid fa-arrows-rotate\"></i></button>') +
+                                '<button onclick=\"openResizeModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\', ' + (vm.cpu_count || 2) + ', ' + (vm.memory_mb || 2048) + ')\" class=\"px-2 py-1 rounded bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 transition\" title=\"Ubah vCPU &amp; RAM\"><i class=\"fa-solid fa-sliders\"></i></button>' +
+                                '<button onclick=\"openExpandDiskModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')\" class=\"px-2 py-1 rounded bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 transition\" title=\"Perbesar Disk VHDX\"><i class=\"fa-solid fa-hard-drive\"></i></button>' +
+                                '<button onclick=\"openCloneModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')\" class=\"px-2 py-1 rounded bg-sky-600/20 text-sky-400 hover:bg-sky-600/30 transition\" title=\"Clone VM\"><i class=\"fa-solid fa-clone\"></i></button>' +
                                 '<button onclick=\"openSnapshotsModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')\" class=\"px-2 py-1 rounded bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 transition\" title=\"Kelola Snapshot / Checkpoints\"><i class=\"fa-solid fa-camera\"></i></button>' +
                                 '<button onclick=\"deleteVM(\'' + vm.id + '\')\" class=\"px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 transition\" title=\"Hapus VM\"><i class=\"fa-solid fa-trash\"></i></button>' +
                             '</td>' +
@@ -952,6 +1227,258 @@ const dashboardHTML = `<!DOCTYPE html>
                 .catch(() => {});
         }
 
+        // ISO Catalog & Downloader
+        let isoPollTimer = null;
+
+        function openISOCatalogModal() {
+            document.getElementById('isoCatalogModal').classList.remove('hidden');
+            loadISOCatalog();
+            pollISODownloads();
+        }
+
+        function closeISOCatalogModal() {
+            document.getElementById('isoCatalogModal').classList.add('hidden');
+            if (isoPollTimer) {
+                clearInterval(isoPollTimer);
+                isoPollTimer = null;
+            }
+        }
+
+        function loadISOCatalog() {
+            const tbody = document.getElementById('isoTableBody');
+            tbody.innerHTML = '<tr><td colspan=\"4\" class=\"px-3 py-4 text-center text-gray-500\">Memuat berkas ISO...</td></tr>';
+            fetchJson('/api/v1/iso')
+                .then(isos => {
+                    if (!isos || isos.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan=\"4\" class=\"px-3 py-6 text-center text-gray-500\">Belum ada berkas ISO di folder <code>./iso</code> controller.<br>Gunakan form di atas untuk mengunduh ISO via URL internet.</td></tr>';
+                        return;
+                    }
+                    let html = '';
+                    isos.forEach(iso => {
+                        const mb = (iso.size_bytes / (1024*1024)).toFixed(1);
+                        const sizeStr = iso.size_bytes > 1024*1024*1024 
+                            ? (iso.size_bytes / (1024*1024*1024)).toFixed(2) + ' GB'
+                            : mb + ' MB';
+                        const modStr = iso.modified_at ? new Date(iso.modified_at).toLocaleString('id-ID') : '-';
+                        const directURL = 'http://' + window.location.host + '/iso/' + encodeURIComponent(iso.name);
+                        html += '<tr class=\"hover:bg-gray-800/20\">' +
+                            '<td class=\"px-3 py-2 font-bold text-white flex items-center gap-1.5\"><i class=\"fa-solid fa-compact-disc text-indigo-400\"></i>' + escapeHtml(iso.name) + '</td>' +
+                            '<td class=\"px-3 py-2 text-indigo-300\">' + sizeStr + '</td>' +
+                            '<td class=\"px-3 py-2 text-gray-400 text-[11px]\">' + modStr + '</td>' +
+                            '<td class=\"px-3 py-2 text-right space-x-1\">' +
+                                '<button onclick=\"copyISOLink(\'' + escapeHtml(directURL) + '\')\" class=\"px-2 py-0.5 rounded bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30 text-[10px] font-semibold\"><i class=\"fa-solid fa-copy mr-1\"></i>Copy Link</button>' +
+                                '<button onclick=\"selectISOForNewVM(\'' + escapeHtml(directURL) + '\')\" class=\"px-2 py-0.5 rounded bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/30 text-[10px] font-semibold\"><i class=\"fa-solid fa-plus mr-1\"></i>Pakai di VM</button>' +
+                            '</td>' +
+                        '</tr>';
+                    });
+                    tbody.innerHTML = html;
+                })
+                .catch(err => {
+                    tbody.innerHTML = '<tr><td colspan=\"4\" class=\"px-3 py-4 text-center text-red-400\">Gagal memuat ISO: ' + escapeHtml(err.message) + '</td></tr>';
+                });
+        }
+
+        function copyISOLink(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                alert('LAN Download URL disalin ke clipboard:\n' + url);
+            }).catch(() => {
+                prompt('Salin link ISO ini:', url);
+            });
+        }
+
+        function selectISOForNewVM(url) {
+            closeISOCatalogModal();
+            const isoInput = document.getElementById('vmISO');
+            if (isoInput) isoInput.value = url;
+            const form = document.getElementById('newVMForm');
+            if (form && form.classList.contains('hidden')) {
+                toggleNewVMForm();
+            }
+        }
+
+        function submitDownloadISO(e) {
+            e.preventDefault();
+            const urlInput = document.getElementById('isoDownloadURL');
+            const fileInput = document.getElementById('isoDownloadFilename');
+            const url = urlInput.value.trim();
+            const filename = fileInput.value.trim();
+            if (!url) return;
+
+            const btn = document.getElementById('btnStartISODownload');
+            btn.disabled = true;
+            btn.innerHTML = '<i class=\"fa-solid fa-spinner fa-spin\"></i> Memulai...';
+
+            fetchJson('/api/v1/iso/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url, filename: filename })
+            })
+            .then(() => {
+                urlInput.value = '';
+                fileInput.value = '';
+                btn.disabled = false;
+                btn.innerHTML = '<i class=\"fa-solid fa-download\"></i> Mulai Download ISO';
+                pollISODownloads();
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class=\"fa-solid fa-download\"></i> Mulai Download ISO';
+                alert('Gagal memulai unduhan ISO: ' + err.message);
+            });
+        }
+
+        function pollISODownloads() {
+            fetch('/api/v1/iso/downloads')
+                .then(r => r.json())
+                .then(tasks => {
+                    const container = document.getElementById('isoDownloadsList');
+                    if (!tasks || tasks.length === 0) {
+                        container.classList.add('hidden');
+                        return;
+                    }
+                    container.classList.remove('hidden');
+                    let html = '';
+                    let hasActive = false;
+                    tasks.forEach(t => {
+                        if (t.status === 'downloading') hasActive = true;
+                        const pct = t.total_bytes > 0 ? ((t.downloaded_bytes / t.total_bytes) * 100).toFixed(1) : '0.0';
+                        const dlMB = (t.downloaded_bytes / (1024*1024)).toFixed(1);
+                        const totMB = t.total_bytes > 0 ? (t.total_bytes / (1024*1024)).toFixed(1) + ' MB' : 'unknown';
+                        const statusColor = t.status === 'completed' ? 'text-emerald-400' : (t.status === 'failed' ? 'text-red-400' : 'text-indigo-400');
+                        html += '<div class=\"p-2 rounded-lg bg-gray-950 border border-gray-800 space-y-1\">' +
+                            '<div class=\"flex justify-between items-center\">' +
+                                '<span class=\"font-bold text-white\">' + escapeHtml(t.filename) + '</span>' +
+                                '<span class=\"' + statusColor + ' font-semibold\">' + t.status.toUpperCase() + ' (' + pct + '%)</span>' +
+                            '</div>' +
+                            '<div class=\"w-full bg-gray-800 h-1 rounded-full overflow-hidden\">' +
+                                '<div class=\"bg-indigo-500 h-full\" style=\"width:' + pct + '%\"></div>' +
+                            '</div>' +
+                            '<div class=\"flex justify-between text-gray-500 text-[10px]\">' +
+                                '<span>' + dlMB + ' MB / ' + totMB + '</span>' +
+                                (t.error ? '<span class=\"text-red-400 truncate max-w-xs\">' + escapeHtml(t.error) + '</span>' : '') +
+                            '</div>' +
+                        '</div>';
+                    });
+                    container.innerHTML = html;
+                    if (hasActive && !isoPollTimer) {
+                        isoPollTimer = setInterval(pollISODownloads, 1500);
+                    } else if (!hasActive && isoPollTimer) {
+                        clearInterval(isoPollTimer);
+                        isoPollTimer = null;
+                        loadISOCatalog();
+                        loadISODropdown();
+                    }
+                })
+                .catch(() => {});
+        }
+
+        // Resize VM
+        let currentResizeVMId = null;
+        function openResizeModal(vmId, vmName, currentCores, currentRAM) {
+            currentResizeVMId = vmId;
+            document.getElementById('resizeVMTitle').innerText = vmName || vmId;
+            document.getElementById('resizeCoresInput').value = currentCores || 2;
+            document.getElementById('resizeRAMInput').value = currentRAM || 4096;
+            document.getElementById('resizeVMModal').classList.remove('hidden');
+        }
+        function closeResizeModal() {
+            document.getElementById('resizeVMModal').classList.add('hidden');
+            currentResizeVMId = null;
+        }
+        function submitResizeVM(e) {
+            e.preventDefault();
+            if (!currentVMNodeId || !currentResizeVMId) return;
+
+            const cores = parseInt(document.getElementById('resizeCoresInput').value, 10);
+            const ram = parseInt(document.getElementById('resizeRAMInput').value, 10);
+
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + currentResizeVMId + '/resize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cpu_count: cores, memory_mb: ram })
+            })
+            .then(() => {
+                alert('Spesifikasi VM berhasil diubah menjadi ' + cores + ' vCPU dan ' + ram + ' MB RAM!');
+                closeResizeModal();
+                loadVMs(currentVMNodeId);
+            })
+            .catch(err => alert('Gagal mengubah spek VM: ' + err.message));
+        }
+
+        // Expand Disk
+        let currentExpandDiskVMId = null;
+        function openExpandDiskModal(vmId, vmName) {
+            currentExpandDiskVMId = vmId;
+            document.getElementById('expandDiskTitle').innerText = vmName || vmId;
+            document.getElementById('expandSizeInput').value = '';
+            document.getElementById('expandDiskModal').classList.remove('hidden');
+        }
+        function closeExpandDiskModal() {
+            document.getElementById('expandDiskModal').classList.add('hidden');
+            currentExpandDiskVMId = null;
+        }
+        function submitExpandDisk(e) {
+            e.preventDefault();
+            if (!currentVMNodeId || !currentExpandDiskVMId) return;
+
+            const sizeGB = parseInt(document.getElementById('expandSizeInput').value, 10);
+            if (!sizeGB || sizeGB <= 0) return;
+
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + currentExpandDiskVMId + '/expand-disk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_size_gb: sizeGB })
+            })
+            .then(() => {
+                alert('Hard Disk VHDX berhasil diperbesar menjadi ' + sizeGB + ' GB!');
+                closeExpandDiskModal();
+                loadVMs(currentVMNodeId);
+            })
+            .catch(err => alert('Gagal memperbesar disk VM: ' + err.message));
+        }
+
+        // Clone VM
+        let currentCloneVMId = null;
+        function openCloneModal(vmId, vmName) {
+            currentCloneVMId = vmId;
+            document.getElementById('cloneVMTitle').innerText = vmName || vmId;
+            document.getElementById('cloneNameInput').value = (vmName ? vmName + '-clone' : 'vm-clone');
+            document.getElementById('cloneVMModal').classList.remove('hidden');
+        }
+        function closeCloneModal() {
+            document.getElementById('cloneVMModal').classList.add('hidden');
+            currentCloneVMId = null;
+        }
+        function submitCloneVM(e) {
+            e.preventDefault();
+            if (!currentVMNodeId || !currentCloneVMId) return;
+
+            const newName = document.getElementById('cloneNameInput').value.trim();
+            if (!newName) return;
+
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerHTML = '<i class=\"fa-solid fa-spinner fa-spin\"></i> Mengkloning...';
+
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + currentCloneVMId + '/clone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_name: newName })
+            })
+            .then(cloned => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class=\"fa-solid fa-clone\"></i> Mulai Kloning VM';
+                alert('VM berhasil dikloning dengan nama \"' + cloned.name + '\"!');
+                closeCloneModal();
+                loadVMs(currentVMNodeId);
+            })
+            .catch(err => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class=\"fa-solid fa-clone\"></i> Mulai Kloning VM';
+                alert('Gagal mengkloning VM: ' + err.message);
+            });
+        }
+
         function escapeHtml(str) {
             return String(str || '')
                 .replace(/&/g, '&amp;')
@@ -960,6 +1487,11 @@ const dashboardHTML = `<!DOCTYPE html>
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#39;');
         }
+
+        fetch('/api/v1/cluster/history')
+            .then(r => r.json())
+            .then(points => renderHistory(points))
+            .catch(() => {});
 
         connectWS();
         fetchNodesManual();

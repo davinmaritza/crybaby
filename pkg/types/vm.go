@@ -52,3 +52,20 @@ type VMCheckpoint struct {
 type CreateCheckpointRequest struct {
 	Name string `json:"name"`
 }
+
+// ResizeVMRequest specifies new CPU and RAM limits for a VM.
+type ResizeVMRequest struct {
+	CPUCount int    `json:"cpu_count"`
+	MemoryMB uint64 `json:"memory_mb"`
+}
+
+// ExpandDiskRequest specifies the new enlarged VHDX disk size in GB.
+type ExpandDiskRequest struct {
+	NewSizeGB uint64 `json:"new_size_gb"`
+}
+
+// CloneVMRequest specifies the target name for the cloned VM.
+type CloneVMRequest struct {
+	NewName string `json:"new_name"`
+}
+
