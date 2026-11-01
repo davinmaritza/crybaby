@@ -78,9 +78,47 @@ func TestHyperVEngineLifecycle(t *testing.T) {
 		t.Errorf("expected error when fetching deleted VM, got nil")
 	}
 
-	// 8. Virtual Switches
+	// 8. Virtual Switches & EnsureVirtualSwitch
 	switches, err := engine.ListVirtualSwitches()
 	if err != nil || len(switches) == 0 {
 		t.Errorf("expected non-empty virtual switch list")
+	}
+	if err := engine.EnsureVirtualSwitch("Crybaby-LAN"); err != nil {
+		t.Fatalf("failed to ensure virtual switch: %v", err)
+	}
+
+	// 9. Test Checkpoint / Snapshot Lifecycle
+	demoVM, err := engine.GetVM("c1000000-0000-0000-0000-000000000001")
+	if err != nil {
+		t.Fatalf("failed to get demo VM: %v", err)
+	}
+	if demoVM.CPUUsagePct < 0 {
+		t.Errorf("expected valid CPUUsagePct, got %d", demoVM.CPUUsagePct)
+	}
+
+	cp, err := engine.CreateCheckpoint(demoVM.ID, "clean-install")
+	if err != nil {
+		t.Fatalf("failed to create checkpoint: %v", err)
+	}
+	if cp.Name != "clean-install" {
+		t.Errorf("expected checkpoint name 'clean-install', got '%s'", cp.Name)
+	}
+
+	cps, err := engine.ListCheckpoints(demoVM.ID)
+	if err != nil || len(cps) != 1 {
+		t.Fatalf("expected 1 checkpoint, got %d (err: %v)", len(cps), err)
+	}
+
+	if err := engine.RestoreCheckpoint(demoVM.ID, "clean-install"); err != nil {
+		t.Fatalf("failed to restore checkpoint: %v", err)
+	}
+
+	if err := engine.DeleteCheckpoint(demoVM.ID, "clean-install"); err != nil {
+		t.Fatalf("failed to delete checkpoint: %v", err)
+	}
+
+	cpsAfter, err := engine.ListCheckpoints(demoVM.ID)
+	if err != nil || len(cpsAfter) != 0 {
+		t.Fatalf("expected 0 checkpoints after deletion, got %d", len(cpsAfter))
 	}
 }

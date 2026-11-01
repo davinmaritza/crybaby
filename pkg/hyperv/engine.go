@@ -23,6 +23,11 @@ type Engine interface {
 	RestartVM(vmID string) error
 	DeleteVM(vmID string, deleteDisk bool) error
 	ListVirtualSwitches() ([]string, error)
+	EnsureVirtualSwitch(switchName string) error
+	CreateCheckpoint(vmID, name string) (*types.VMCheckpoint, error)
+	ListCheckpoints(vmID string) ([]types.VMCheckpoint, error)
+	RestoreCheckpoint(vmID, name string) error
+	DeleteCheckpoint(vmID, name string) error
 }
 
 // NewEngine returns a platform-appropriate Hyper-V engine.
@@ -40,7 +45,7 @@ type windowsEngine struct {
 }
 
 func (w *windowsEngine) ListVMs() ([]types.VirtualMachine, error) {
-	script := `Get-VM | Select-Object Id, Name, State, CPUUsage, MemoryAssigned, Uptime, @{N='IPAddresses';E={$_.NetworkAdapters.IPAddresses -join ','}}, @{N='HardDrives';E={$_.HardDrives.Path -join ','}} | ConvertTo-Json -Compress`
+	script := `Get-VM | Select-Object Id, Name, State, CPUUsage, MemoryAssigned, MemoryDemand, Uptime, @{N='IPAddresses';E={$_.NetworkAdapters.IPAddresses -join ','}}, @{N='HardDrives';E={$_.HardDrives.Path -join ','}} | ConvertTo-Json -Compress`
 	out, err := runPowerShell(script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Hyper-V VMs: %w", err)
@@ -60,7 +65,9 @@ func (w *windowsEngine) ListVMs() ([]types.VirtualMachine, error) {
 		Id             string `json:"Id"`
 		Name           string `json:"Name"`
 		State          int    `json:"State"`
+		CPUUsage       int    `json:"CPUUsage"`
 		MemoryAssigned int64  `json:"MemoryAssigned"`
+		MemoryDemand   int64  `json:"MemoryDemand"`
 		IPAddresses    string `json:"IPAddresses"`
 		HardDrives     string `json:"HardDrives"`
 	}
@@ -91,15 +98,23 @@ func (w *windowsEngine) ListVMs() ([]types.VirtualMachine, error) {
 			}
 		}
 
+		demandMB := uint64(0)
+		if item.MemoryDemand > 0 {
+			demandMB = uint64(item.MemoryDemand / (1024 * 1024))
+		}
+
 		vms = append(vms, types.VirtualMachine{
-			ID:          item.Id,
-			NodeID:      w.nodeID,
-			Name:        item.Name,
-			State:       state,
-			MemoryMB:    uint64(item.MemoryAssigned / (1024 * 1024)),
-			DiskPath:    item.HardDrives,
-			IPAddresses: ips,
-			CreatedAt:   time.Now(),
+			ID:             item.Id,
+			NodeID:         w.nodeID,
+			Name:           item.Name,
+			State:          state,
+			CPUCount:       2,
+			CPUUsagePct:    item.CPUUsage,
+			MemoryMB:       uint64(item.MemoryAssigned / (1024 * 1024)),
+			MemoryDemandMB: demandMB,
+			DiskPath:       item.HardDrives,
+			IPAddresses:    ips,
+			CreatedAt:      time.Now(),
 		})
 	}
 	return vms, nil
@@ -139,9 +154,9 @@ func (w *windowsEngine) CreateVM(req types.CreateVMRequest) (*types.VirtualMachi
 	isoCommand := ""
 	if req.ISOPath != "" {
 		isoCommand = fmt.Sprintf(`
-		Set-VMDvdDrive -VMName "%s" -Path "%s"
+		Add-VMDvdDrive -VMName "%s" -Path "%s"
 		$dvd = Get-VMDvdDrive -VMName "%s"
-		Set-VMFirmware -VMName "%s" -FirstBootDevice $dvd
+		Set-VMFirmware -VMName "%s" -FirstBootDevice $dvd -EnableSecureBoot $false
 		`, req.Name, req.ISOPath, req.Name, req.Name)
 	}
 
@@ -252,6 +267,113 @@ func (w *windowsEngine) ListVirtualSwitches() ([]string, error) {
 	return []string{"Default Switch"}, nil
 }
 
+func (w *windowsEngine) EnsureVirtualSwitch(switchName string) error {
+	script := fmt.Sprintf(`
+		$ext = Get-VMSwitch -Name "%s" -ErrorAction SilentlyContinue
+		if (-not $ext) {
+			$eth = Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq "Up" } | Select-Object -First 1
+			if ($eth) {
+				New-VMSwitch -Name "%s" -NetAdapterName $eth.Name -AllowManagementOS $true -ErrorAction SilentlyContinue | Out-Null
+			}
+		}
+	`, switchName, switchName)
+	_, err := runPowerShell(script)
+	return err
+}
+
+func (w *windowsEngine) CreateCheckpoint(vmID, name string) (*types.VMCheckpoint, error) {
+	if name == "" {
+		name = fmt.Sprintf("Snapshot-%s", time.Now().Format("20060102-150405"))
+	}
+	script := fmt.Sprintf(`
+		$snap = Checkpoint-VM -Id "%s" -SnapshotName "%s" -Passthru | Select-Object Id, Name, CreationTime | ConvertTo-Json -Compress
+		$snap
+	`, vmID, name)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create checkpoint: %w (%s)", err, out)
+	}
+	out = strings.TrimSpace(out)
+	type psSnap struct {
+		Id           string `json:"Id"`
+		Name         string `json:"Name"`
+		CreationTime string `json:"CreationTime"`
+	}
+	var s psSnap
+	if err := json.Unmarshal([]byte(out), &s); err != nil {
+		return &types.VMCheckpoint{
+			ID:        fmt.Sprintf("cp-%d", time.Now().UnixNano()%1000000),
+			VMID:      vmID,
+			Name:      name,
+			CreatedAt: time.Now().UTC(),
+		}, nil
+	}
+	return &types.VMCheckpoint{
+		ID:        s.Id,
+		VMID:      vmID,
+		Name:      s.Name,
+		CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+func (w *windowsEngine) ListCheckpoints(vmID string) ([]types.VMCheckpoint, error) {
+	script := fmt.Sprintf(`
+		Get-VMSnapshot -VMId "%s" | Select-Object Id, Name, CreationTime | ConvertTo-Json -Compress
+	`, vmID)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return []types.VMCheckpoint{}, nil
+	}
+	out = strings.TrimSpace(out)
+	if out == "" || out == "null" {
+		return []types.VMCheckpoint{}, nil
+	}
+	if strings.HasPrefix(out, "{") {
+		out = "[" + out + "]"
+	}
+	type psSnap struct {
+		Id           string `json:"Id"`
+		Name         string `json:"Name"`
+		CreationTime string `json:"CreationTime"`
+	}
+	var raw []psSnap
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		return []types.VMCheckpoint{}, nil
+	}
+	res := make([]types.VMCheckpoint, 0, len(raw))
+	for _, item := range raw {
+		res = append(res, types.VMCheckpoint{
+			ID:        item.Id,
+			VMID:      vmID,
+			Name:      item.Name,
+			CreatedAt: time.Now().UTC(),
+		})
+	}
+	return res, nil
+}
+
+func (w *windowsEngine) RestoreCheckpoint(vmID, name string) error {
+	script := fmt.Sprintf(`
+		Restore-VMSnapshot -VMId "%s" -Name "%s" -Confirm:$false
+	`, vmID, name)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return fmt.Errorf("failed to restore checkpoint: %w (%s)", err, out)
+	}
+	return nil
+}
+
+func (w *windowsEngine) DeleteCheckpoint(vmID, name string) error {
+	script := fmt.Sprintf(`
+		Remove-VMSnapshot -VMId "%s" -Name "%s" -Confirm:$false
+	`, vmID, name)
+	out, err := runPowerShell(script)
+	if err != nil {
+		return fmt.Errorf("failed to delete checkpoint: %w (%s)", err, out)
+	}
+	return nil
+}
+
 func runPowerShell(command string) (string, error) {
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command)
 	out, err := cmd.CombinedOutput()
@@ -260,30 +382,36 @@ func runPowerShell(command string) (string, error) {
 
 // simulatedEngine provides an in-memory Hyper-V simulation for development and non-Windows hosts.
 type simulatedEngine struct {
-	mu     sync.RWMutex
-	nodeID string
-	vms    map[string]*types.VirtualMachine
+	mu          sync.RWMutex
+	nodeID      string
+	vms         map[string]*types.VirtualMachine
+	checkpoints map[string][]types.VMCheckpoint
+	switches    []string
 }
 
 func newSimulatedEngine(nodeID string) *simulatedEngine {
 	s := &simulatedEngine{
-		nodeID: nodeID,
-		vms:    make(map[string]*types.VirtualMachine),
+		nodeID:      nodeID,
+		vms:         make(map[string]*types.VirtualMachine),
+		checkpoints: make(map[string][]types.VMCheckpoint),
+		switches:    []string{"Default Switch", "Internal-VMSwitch", "External-Bridge", "Crybaby-LAN"},
 	}
 	// Seed 1 default demo VM
 	demoID := "c1000000-0000-0000-0000-000000000001"
 	s.vms[demoID] = &types.VirtualMachine{
-		ID:            demoID,
-		NodeID:        nodeID,
-		Name:          "ubuntu-srv-01",
-		State:         types.VMStateRunning,
-		CPUCount:      2,
-		MemoryMB:      4096,
-		DiskPath:      `C:\Crybaby\Disks\ubuntu-srv-01.vhdx`,
-		DiskSizeBytes: 40 * 1024 * 1024 * 1024,
-		UptimeSeconds: 7200,
-		IPAddresses:   []string{"10.42.100.15"},
-		CreatedAt:     time.Now().Add(-2 * time.Hour),
+		ID:             demoID,
+		NodeID:         nodeID,
+		Name:           "ubuntu-srv-01",
+		State:          types.VMStateRunning,
+		CPUCount:       2,
+		CPUUsagePct:    12,
+		MemoryMB:       4096,
+		MemoryDemandMB: 1536,
+		DiskPath:       `C:\Crybaby\Disks\ubuntu-srv-01.vhdx`,
+		DiskSizeBytes:  40 * 1024 * 1024 * 1024,
+		UptimeSeconds:  7200,
+		IPAddresses:    []string{"10.42.100.15"},
+		CreatedAt:      time.Now().Add(-2 * time.Hour),
 	}
 	return s
 }
@@ -327,7 +455,9 @@ func (s *simulatedEngine) CreateVM(req types.CreateVMRequest) (*types.VirtualMac
 		Name:          req.Name,
 		State:         types.VMStateStopped,
 		CPUCount:      req.CPUCount,
+		CPUUsagePct:   0,
 		MemoryMB:      req.MemoryMB,
+		MemoryDemandMB: 0,
 		DiskPath:      fmt.Sprintf(`C:\Crybaby\Disks\%s.vhdx`, req.Name),
 		DiskSizeBytes: req.DiskSizeGB * 1024 * 1024 * 1024,
 		CreatedAt:     time.Now().UTC(),
@@ -347,6 +477,8 @@ func (s *simulatedEngine) StartVM(vmID string) error {
 	vm.State = types.VMStateRunning
 	vm.UptimeSeconds = 0
 	vm.IPAddresses = []string{"192.168.100.192"}
+	vm.CPUUsagePct = 8
+	vm.MemoryDemandMB = vm.MemoryMB / 2
 	return nil
 }
 
@@ -360,6 +492,8 @@ func (s *simulatedEngine) StopVM(vmID string, force bool) error {
 	vm.State = types.VMStateStopped
 	vm.UptimeSeconds = 0
 	vm.IPAddresses = nil
+	vm.CPUUsagePct = 0
+	vm.MemoryDemandMB = 0
 	return nil
 }
 
@@ -372,6 +506,8 @@ func (s *simulatedEngine) RestartVM(vmID string) error {
 	}
 	vm.State = types.VMStateRunning
 	vm.UptimeSeconds = 0
+	vm.CPUUsagePct = 10
+	vm.MemoryDemandMB = vm.MemoryMB / 2
 	return nil
 }
 
@@ -382,9 +518,91 @@ func (s *simulatedEngine) DeleteVM(vmID string, deleteDisk bool) error {
 		return fmt.Errorf("VM '%s' not found", vmID)
 	}
 	delete(s.vms, vmID)
+	delete(s.checkpoints, vmID)
 	return nil
 }
 
 func (s *simulatedEngine) ListVirtualSwitches() ([]string, error) {
-	return []string{"Default Switch", "Internal-VMSwitch", "External-Bridge"}, nil
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	list := make([]string, len(s.switches))
+	copy(list, s.switches)
+	return list, nil
+}
+
+func (s *simulatedEngine) EnsureVirtualSwitch(switchName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, sw := range s.switches {
+		if sw == switchName {
+			return nil
+		}
+	}
+	s.switches = append(s.switches, switchName)
+	return nil
+}
+
+func (s *simulatedEngine) CreateCheckpoint(vmID, name string) (*types.VMCheckpoint, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	vm, exists := s.vms[vmID]
+	if !exists {
+		return nil, fmt.Errorf("VM '%s' not found", vmID)
+	}
+	if name == "" {
+		name = fmt.Sprintf("Snapshot-%s", time.Now().Format("20060102-150405"))
+	}
+	cp := types.VMCheckpoint{
+		ID:        fmt.Sprintf("cp-%d", time.Now().UnixNano()%1000000),
+		VMID:      vm.ID,
+		Name:      name,
+		CreatedAt: time.Now().UTC(),
+	}
+	s.checkpoints[vmID] = append(s.checkpoints[vmID], cp)
+	return &cp, nil
+}
+
+func (s *simulatedEngine) ListCheckpoints(vmID string) ([]types.VMCheckpoint, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, exists := s.vms[vmID]; !exists {
+		return nil, fmt.Errorf("VM '%s' not found", vmID)
+	}
+	list := s.checkpoints[vmID]
+	if list == nil {
+		return []types.VMCheckpoint{}, nil
+	}
+	res := make([]types.VMCheckpoint, len(list))
+	copy(res, list)
+	return res, nil
+}
+
+func (s *simulatedEngine) RestoreCheckpoint(vmID, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.vms[vmID]; !exists {
+		return fmt.Errorf("VM '%s' not found", vmID)
+	}
+	for _, cp := range s.checkpoints[vmID] {
+		if cp.Name == name || cp.ID == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("checkpoint '%s' not found", name)
+}
+
+func (s *simulatedEngine) DeleteCheckpoint(vmID, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.vms[vmID]; !exists {
+		return fmt.Errorf("VM '%s' not found", vmID)
+	}
+	list := s.checkpoints[vmID]
+	for i, cp := range list {
+		if cp.Name == name || cp.ID == name {
+			s.checkpoints[vmID] = append(list[:i], list[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("checkpoint '%s' not found", name)
 }

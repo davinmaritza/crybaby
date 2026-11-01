@@ -130,6 +130,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#6366F1"/><path d="M50 20 L35 55 L50 55 L45 80 L65 45 L50 45 Z" fill="#FFFFFF"/></svg>`))
 	})
 
+	// ISO repository static file server for LAN distribution
+	_ = os.MkdirAll("./iso", 0755)
+	mux.Handle("/iso/", http.StripPrefix("/iso/", http.FileServer(http.Dir("./iso"))))
+
 	// Embedded web dashboard
 	mux.HandleFunc("/", s.handleWebDashboard)
 }

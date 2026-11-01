@@ -84,6 +84,15 @@ func main() {
 	// Initialize Hyper-V Engine
 	hvEngine := hyperv.NewEngine(regResp.NodeID)
 
+	// Self-healing: Ensure external switch 'Crybaby-LAN' exists in background
+	go func() {
+		if err := hvEngine.EnsureVirtualSwitch("Crybaby-LAN"); err != nil {
+			log.Printf("⚠️ Notice: EnsureVirtualSwitch 'Crybaby-LAN': %v", err)
+		} else {
+			log.Printf("🔌 Verified External Virtual Switch 'Crybaby-LAN' is active")
+		}
+	}()
+
 	// Start local Agent RPC server for Controller commands
 	go startAgentRPCServer(cfg.AgentPort, hvEngine)
 
@@ -196,6 +205,52 @@ func startAgentRPCServer(port int, hv hyperv.Engine) {
 				return
 			}
 			jsonResponse(w, http.StatusOK, map[string]string{"status": "restarted"})
+		case "checkpoints":
+			if len(parts) == 2 {
+				// /api/v1/vms/:vm_id/checkpoints
+				if r.Method == http.MethodGet {
+					cps, err := hv.ListCheckpoints(vmID)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					jsonResponse(w, http.StatusOK, cps)
+					return
+				} else if r.Method == http.MethodPost {
+					var req types.CreateCheckpointRequest
+					_ = json.NewDecoder(r.Body).Decode(&req)
+					cp, err := hv.CreateCheckpoint(vmID, req.Name)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+					jsonResponse(w, http.StatusOK, cp)
+					return
+				}
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			subAction := parts[2]
+			if subAction == "restore" && r.Method == http.MethodPost {
+				var req types.CreateCheckpointRequest
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				if err := hv.RestoreCheckpoint(vmID, req.Name); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				jsonResponse(w, http.StatusOK, map[string]string{"status": "restored"})
+				return
+			}
+			if r.Method == http.MethodDelete {
+				// /api/v1/vms/:vm_id/checkpoints/:name
+				if err := hv.DeleteCheckpoint(vmID, subAction); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				jsonResponse(w, http.StatusOK, map[string]string{"status": "deleted"})
+				return
+			}
+			http.Error(w, "Unknown checkpoint action", http.StatusNotFound)
 		default:
 			http.Error(w, "Unknown VM action", http.StatusNotFound)
 		}

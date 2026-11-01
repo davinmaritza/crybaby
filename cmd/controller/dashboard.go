@@ -283,6 +283,7 @@ const dashboardHTML = `<!DOCTYPE html>
                         <div class="md:col-span-2">
                             <label for="vmISO" class="block text-gray-400 mb-1">Path File ISO Installer (Opsional)</label>
                             <input id="vmISO" name="iso_path" type="text" autocomplete="off" placeholder="e.g. C:\ISO\ubuntu-24.04-live-server.iso" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                            <p class="text-[11px] text-gray-400 mt-1"><i class="fa-solid fa-server text-indigo-400 mr-1"></i>ISO dapat disimpan di folder <code>iso/</code> controller laptop dan diunduh via LAN.</p>
                         </div>
                     </div>
                     <div class="flex justify-end">
@@ -300,7 +301,8 @@ const dashboardHTML = `<!DOCTYPE html>
                         <tr>
                             <th class="px-4 py-2.5">VM Name</th>
                             <th class="px-4 py-2.5">State</th>
-                            <th class="px-4 py-2.5">Specs</th>
+                            <th class="px-4 py-2.5">CPU &amp; Cores</th>
+                            <th class="px-4 py-2.5">RAM &amp; Demand</th>
                             <th class="px-4 py-2.5">IP Address</th>
                             <th class="px-4 py-2.5">VHDX Path</th>
                             <th class="px-4 py-2.5 text-right">Actions</th>
@@ -308,7 +310,7 @@ const dashboardHTML = `<!DOCTYPE html>
                     </thead>
                     <tbody id="vmTableBody" class="divide-y divide-gray-800/40 font-mono">
                         <tr>
-                            <td colspan="6" class="px-4 py-6 text-center text-gray-500">Memuat VM...</td>
+                            <td colspan="7" class="px-4 py-6 text-center text-gray-500">Memuat VM...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -337,6 +339,52 @@ const dashboardHTML = `<!DOCTYPE html>
             <div class="flex justify-between items-center pt-2 border-t border-gray-800 text-xs text-gray-500">
                 <span>Tekan <kbd class="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300">Ctrl+C</kbd> atau ketik <code>exit</code> untuk keluar</span>
                 <button onclick="closeTerminal()" class="px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Snapshot / Checkpoint Modal -->
+    <div id="snapshotModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-2xl w-full rounded-2xl border border-gray-700 p-5 space-y-4 shadow-2xl">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-camera text-purple-400"></i>
+                        Snapshots / Checkpoints &bull; <span id="snapVMTitle" class="text-indigo-400">VM</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">Kelola riwayat snapshot dan rollback VM ke kondisi sebelumnya</p>
+                </div>
+                <button onclick="closeSnapshotsModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+
+            <!-- Create Snapshot Form -->
+            <form id="createSnapshotForm" class="flex gap-2 text-xs" onsubmit="submitNewSnapshot(event)">
+                <input id="snapNameInput" type="text" placeholder="Nama snapshot (misal: sebelum-update-db)" required class="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-purple-500 focus:outline-none">
+                <button type="submit" class="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold flex items-center gap-1.5">
+                    <i class="fa-solid fa-plus"></i> Buat Snapshot
+                </button>
+            </form>
+
+            <!-- Snapshots Table -->
+            <div class="overflow-x-auto max-h-60 overflow-y-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="uppercase bg-gray-950/80 text-gray-400 border-b border-gray-800">
+                        <tr>
+                            <th class="px-3 py-2">Nama Snapshot</th>
+                            <th class="px-3 py-2">Dibuat Pada</th>
+                            <th class="px-3 py-2 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="snapshotTableBody" class="divide-y divide-gray-800/40 font-mono">
+                        <tr>
+                            <td colspan="3" class="px-3 py-4 text-center text-gray-500">Memuat snapshot...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex justify-end pt-2 border-t border-gray-800">
+                <button onclick="closeSnapshotsModal()" class="px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
             </div>
         </div>
     </div>
@@ -538,12 +586,12 @@ const dashboardHTML = `<!DOCTYPE html>
 
         function loadVMs(nodeId) {
             const tbody = document.getElementById('vmTableBody');
-            tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-4 py-6 text-center text-gray-500\">Memuat VM Hyper-V...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan=\"7\" class=\"px-4 py-6 text-center text-gray-500\">Memuat VM Hyper-V...</td></tr>';
             
             fetchJson('/api/v1/nodes/' + nodeId + '/vms')
                 .then(vms => {
                     if (!vms || vms.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-4 py-6 text-center text-gray-500\">Belum ada VM di node ini. Buat VM baru menggunakan form di atas.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan=\"7\" class=\"px-4 py-6 text-center text-gray-500\">Belum ada VM di node ini. Buat VM baru menggunakan form di atas.</td></tr>';
                         return;
                     }
                     let html = '';
@@ -553,30 +601,157 @@ const dashboardHTML = `<!DOCTYPE html>
                             ? '<span class=\"px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20\">RUNNING</span>'
                             : '<span class=\"px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-500/10 text-gray-400 border border-gray-500/20\">STOPPED</span>';
                         
-                        const ipBadges = (vm.ip_addresses && vm.ip_addresses.length)
-                            ? vm.ip_addresses.map(ip => '<span class=\"px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px]\">' + escapeHtml(ip) + '</span>').join(' ')
-                            : '<span class=\"text-gray-500 text-[11px]\">-</span>';
+                        let ipBadges = '<span class=\"text-gray-500 text-[11px]\">-</span>';
+                        let rdpBtn = '';
+                        if (vm.ip_addresses && vm.ip_addresses.length > 0) {
+                            const firstIp = vm.ip_addresses[0];
+                            ipBadges = vm.ip_addresses.map(ip => '<span class=\"px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px]\">' + escapeHtml(ip) + '</span>').join(' ');
+                            rdpBtn = ' <button onclick=\"downloadRdp(\'' + escapeHtml(vm.name) + '\', \'' + escapeHtml(firstIp) + '\')\" title=\"Download file .rdp untuk Remote Desktop instan\" class=\"px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 text-[10px] font-bold transition\"><i class=\"fa-solid fa-desktop mr-1\"></i>RDP</button>';
+                        }
+
+                        const cpuText = '<span class=\"font-bold ' + ((vm.cpu_usage_pct || 0) > 50 ? 'text-amber-400' : 'text-emerald-400') + '\">' + (vm.cpu_usage_pct || 0) + '%</span> &bull; ' + (vm.cpu_count || 2) + ' vCPU';
+                        const ramText = (vm.memory_demand_mb ? '<span class=\"text-indigo-400 font-semibold\">' + vm.memory_demand_mb + ' MB</span> / ' : '') + (vm.memory_mb || 2048) + ' MB';
 
                         html += '<tr class=\"hover:bg-gray-800/20\">' +
                             '<td class=\"px-4 py-3 font-bold text-white\">' + escapeHtml(vm.name) + '</td>' +
                             '<td class=\"px-4 py-3\">' + badge + '</td>' +
-                            '<td class=\"px-4 py-3 text-gray-300\">' + (vm.cpu_count || 2) + ' vCPU &bull; ' + (vm.memory_mb || 2048) + ' MB</td>' +
-                            '<td class=\"px-4 py-3 font-mono\">' + ipBadges + '</td>' +
+                            '<td class=\"px-4 py-3 text-gray-300\">' + cpuText + '</td>' +
+                            '<td class=\"px-4 py-3 text-gray-300\">' + ramText + '</td>' +
+                            '<td class=\"px-4 py-3 font-mono\">' + ipBadges + rdpBtn + '</td>' +
                             '<td class=\"px-4 py-3 text-gray-500 truncate max-w-xs\" title=\"' + (vm.disk_path || '-') + '\">' + (vm.disk_path || '-') + '</td>' +
                             '<td class=\"px-4 py-3 text-right space-x-1\">' +
                                 (!isRunning 
-                                    ? '<button onclick=\"controlVM(\'' + vm.id + '\', \'start\')\" class=\"px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30\"><i class=\"fa-solid fa-play\"></i></button>'
-                                    : '<button onclick=\"controlVM(\'' + vm.id + '\', \'stop\')\" class=\"px-2 py-1 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/30\"><i class=\"fa-solid fa-stop\"></i></button>' +
-                                      '<button onclick=\"controlVM(\'' + vm.id + '\', \'restart\')\" class=\"px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30\"><i class=\"fa-solid fa-arrows-rotate\"></i></button>') +
-                                '<button onclick=\"deleteVM(\'' + vm.id + '\')\" class=\"px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30\"><i class=\"fa-solid fa-trash\"></i></button>' +
+                                    ? '<button onclick=\"controlVM(\'' + vm.id + '\', \'start\')\" class=\"px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 transition\" title=\"Start VM\"><i class=\"fa-solid fa-play\"></i></button>'
+                                    : '<button onclick=\"controlVM(\'' + vm.id + '\', \'stop\')\" class=\"px-2 py-1 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 transition\" title=\"Stop VM\"><i class=\"fa-solid fa-stop\"></i></button>' +
+                                      '<button onclick=\"controlVM(\'' + vm.id + '\', \'restart\')\" class=\"px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 transition\" title=\"Restart VM\"><i class=\"fa-solid fa-arrows-rotate\"></i></button>') +
+                                '<button onclick=\"openSnapshotsModal(\'' + vm.id + '\', \'' + escapeHtml(vm.name) + '\')\" class=\"px-2 py-1 rounded bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 transition\" title=\"Kelola Snapshot / Checkpoints\"><i class=\"fa-solid fa-camera\"></i></button>' +
+                                '<button onclick=\"deleteVM(\'' + vm.id + '\')\" class=\"px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 transition\" title=\"Hapus VM\"><i class=\"fa-solid fa-trash\"></i></button>' +
                             '</td>' +
                         '</tr>';
                     });
                     tbody.innerHTML = html;
                 })
                 .catch(err => {
-                    tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-4 py-6 text-center text-amber-400/90 font-medium\"><i class=\"fa-solid fa-triangle-exclamation mr-2 text-amber-400\"></i>Gagal memuat VM: ' + escapeHtml(err.message) + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan=\"7\" class=\"px-4 py-6 text-center text-amber-400/90 font-medium\"><i class=\"fa-solid fa-triangle-exclamation mr-2 text-amber-400\"></i>Gagal memuat VM: ' + escapeHtml(err.message) + '</td></tr>';
                 });
+        }
+
+        function downloadRdp(vmName, ip) {
+            const rdpContent = [
+                \"full address:s:\" + ip + \":3389\",
+                \"prompt for credentials:i:1\",
+                \"administrative session:i:1\",
+                \"screen mode id:i:2\",
+                \"use multimon:i:0\",
+                \"desktopwidth:i:1920\",
+                \"desktopheight:i:1080\",
+                \"session bpp:i:32\",
+                \"compression:i:1\",
+                \"keyboardhook:i:2\",
+                \"audiomode:i:0\"
+            ].join(\"\\r\\n\");
+
+            const blob = new Blob([rdpContent], { type: \"application/x-rdp\" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement(\"a\");
+            a.href = url;
+            a.download = (vmName || \"crybaby-vm\") + \".rdp\";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        let currentSnapshotVMId = null;
+
+        function openSnapshotsModal(vmId, vmName) {
+            currentSnapshotVMId = vmId;
+            document.getElementById('snapVMTitle').innerText = vmName || vmId;
+            document.getElementById('snapshotModal').classList.remove('hidden');
+            loadSnapshots(vmId);
+        }
+
+        function closeSnapshotsModal() {
+            document.getElementById('snapshotModal').classList.add('hidden');
+            currentSnapshotVMId = null;
+        }
+
+        function loadSnapshots(vmId) {
+            const tbody = document.getElementById('snapshotTableBody');
+            tbody.innerHTML = '<tr><td colspan=\"3\" class=\"px-3 py-4 text-center text-gray-500\">Memuat snapshot...</td></tr>';
+            
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId + '/checkpoints')
+                .then(snaps => {
+                    if (!snaps || snaps.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan=\"3\" class=\"px-3 py-4 text-center text-gray-500\">Belum ada snapshot untuk VM ini.</td></tr>';
+                        return;
+                    }
+                    let html = '';
+                    snaps.forEach(s => {
+                        const dateStr = s.created_at ? new Date(s.created_at).toLocaleString('id-ID') : '-';
+                        html += '<tr class=\"hover:bg-gray-800/20\">' +
+                            '<td class=\"px-3 py-2 font-bold text-white\">' + escapeHtml(s.name) + '</td>' +
+                            '<td class=\"px-3 py-2 text-gray-400 text-[11px]\">' + dateStr + '</td>' +
+                            '<td class=\"px-3 py-2 text-right space-x-1\">' +
+                                '<button onclick=\"restoreSnapshot(\'' + escapeHtml(s.name) + '\')\" class=\"px-2 py-0.5 rounded bg-amber-600/20 text-amber-300 hover:bg-amber-600/30 text-[10px] font-semibold\" title=\"Rollback ke snapshot ini\"><i class=\"fa-solid fa-clock-rotate-left mr-1\"></i>Rollback</button>' +
+                                '<button onclick=\"deleteSnapshot(\'' + escapeHtml(s.name) + '\')\" class=\"px-2 py-0.5 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30 text-[10px]\" title=\"Hapus snapshot\"><i class=\"fa-solid fa-trash\"></i></button>' +
+                            '</td>' +
+                        '</tr>';
+                    });
+                    tbody.innerHTML = html;
+                })
+                .catch(err => {
+                    tbody.innerHTML = '<tr><td colspan=\"3\" class=\"px-3 py-4 text-center text-amber-400\">Gagal memuat snapshot: ' + escapeHtml(err.message) + '</td></tr>';
+                });
+        }
+
+        function submitNewSnapshot(e) {
+            e.preventDefault();
+            if (!currentVMNodeId || !currentSnapshotVMId) return;
+
+            const nameInput = document.getElementById('snapNameInput');
+            const name = nameInput.value.trim();
+            if (!name) return;
+
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + currentSnapshotVMId + '/checkpoints', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name })
+            })
+            .then(() => {
+                nameInput.value = '';
+                loadSnapshots(currentSnapshotVMId);
+            })
+            .catch(err => alert('Gagal membuat snapshot: ' + err.message));
+        }
+
+        function restoreSnapshot(snapName) {
+            if (!currentVMNodeId || !currentSnapshotVMId) return;
+            if (!confirm('PERINGATAN: Kembalikan (Rollback) VM ini ke snapshot \"' + snapName + '\"?\\n\\nKondisi VM saat ini akan ditimpa dengan keadaan saat snapshot dibuat.')) return;
+
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + currentSnapshotVMId + '/checkpoints/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: snapName })
+            })
+            .then(() => {
+                alert('VM berhasil di-rollback ke snapshot \"' + snapName + '\"!');
+                loadVMs(currentVMNodeId);
+            })
+            .catch(err => alert('Gagal rollback snapshot: ' + err.message));
+        }
+
+        function deleteSnapshot(snapName) {
+            if (!currentVMNodeId || !currentSnapshotVMId) return;
+            if (!confirm('Hapus snapshot \"' + snapName + '\"?')) return;
+
+            fetchJson('/api/v1/nodes/' + currentVMNodeId + '/vms/' + currentSnapshotVMId + '/checkpoints/' + encodeURIComponent(snapName), {
+                method: 'DELETE'
+            })
+            .then(() => {
+                loadSnapshots(currentSnapshotVMId);
+            })
+            .catch(err => alert('Gagal menghapus snapshot: ' + err.message));
         }
 
         function submitNewVM(e) {

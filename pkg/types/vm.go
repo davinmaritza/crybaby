@@ -25,15 +25,30 @@ type VirtualMachine struct {
 	DiskSizeBytes  uint64    `json:"disk_size_bytes"`
 	UptimeSeconds  uint64    `json:"uptime_seconds"`
 	IPAddresses    []string  `json:"ip_addresses"`
+	CPUUsagePct    int       `json:"cpu_usage_pct"`
+	MemoryDemandMB uint64    `json:"memory_demand_mb"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
 // CreateVMRequest specifies parameters for provisioning a new Hyper-V VM.
 type CreateVMRequest struct {
-	Name          string `json:"name"`
-	CPUCount      int    `json:"cpu_count"`
-	MemoryMB      uint64 `json:"memory_mb"`
-	DiskSizeGB    uint64 `json:"disk_size_gb"`
-	SwitchName    string `json:"switch_name"`
-	ISOPath       string `json:"iso_path,omitempty"`
+	Name       string `json:"name"`
+	CPUCount   int    `json:"cpu_count"`
+	MemoryMB   uint64 `json:"memory_mb"`
+	DiskSizeGB uint64 `json:"disk_size_gb"`
+	SwitchName string `json:"switch_name"`
+	ISOPath    string `json:"iso_path,omitempty"`
+}
+
+// VMCheckpoint represents a Hyper-V snapshot/checkpoint of a VM.
+type VMCheckpoint struct {
+	ID        string    `json:"id"`
+	VMID      string    `json:"vm_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CreateCheckpointRequest specifies the snapshot name to create.
+type CreateCheckpointRequest struct {
+	Name string `json:"name"`
 }
