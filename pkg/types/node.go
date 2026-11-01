@@ -24,6 +24,7 @@ type NodeHardware struct {
 	TotalDiskBytes uint64 `json:"total_disk_bytes"`
 	MACAddress     string `json:"mac_address"`
 	HyperVEnabled  bool   `json:"hyperv_enabled"`
+	AgentPort      int    `json:"agent_port"`
 }
 
 // NodeMetrics contains real-time operational telemetry.
@@ -45,6 +46,7 @@ type Node struct {
 	ID             string       `json:"id"`
 	Name           string       `json:"name"`
 	IPAddress      string       `json:"ip_address"`
+	AgentPort      int          `json:"agent_port"`
 	MeshIP         string       `json:"mesh_ip"`
 	Status         NodeStatus   `json:"status"`
 	Hardware       NodeHardware `json:"hardware"`

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -266,9 +267,67 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			"node_id": nodeID,
 		})
 
+	case "vms":
+		node, found := s.registry.GetNode(nodeID)
+		if !found {
+			http.Error(w, "Node not found", http.StatusNotFound)
+			return
+		}
+		subPath := strings.TrimPrefix(path, nodeID+"/")
+		s.proxyToNode(node, subPath, w, r)
+
+	case "switches":
+		node, found := s.registry.GetNode(nodeID)
+		if !found {
+			http.Error(w, "Node not found", http.StatusNotFound)
+			return
+		}
+		s.proxyToNode(node, "switches", w, r)
+
 	default:
 		http.Error(w, "Unknown node subroute", http.StatusNotFound)
 	}
+}
+
+func (s *Server) proxyToNode(node *types.Node, subpath string, w http.ResponseWriter, r *http.Request) {
+	port := node.AgentPort
+	if port == 0 {
+		port = 8081
+	}
+
+	targetURL := fmt.Sprintf("http://%s:%d/api/v1/%s", node.IPAddress, port, subpath)
+	if r.URL.RawQuery != "" {
+		targetURL += "?" + r.URL.RawQuery
+	}
+
+	proxyReq, err := http.NewRequest(r.Method, targetURL, r.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to construct proxy request: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Copy headers
+	for k, vv := range r.Header {
+		for _, v := range vv {
+			proxyReq.Header.Add(k, v)
+		}
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(proxyReq)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Node agent unreachable at %s: %v", targetURL, err), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	for k, vv := range resp.Header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {

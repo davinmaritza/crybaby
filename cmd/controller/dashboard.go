@@ -225,6 +225,87 @@ const dashboardHTML = `<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- Hyper-V VM Management Modal -->
+    <div id="vmModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-3xl w-full rounded-2xl border border-gray-700 p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-cube text-emerald-400"></i>
+                        Hyper-V Virtual Machines &bull; <span id="vmNodeTitle" class="text-indigo-400">Node</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">Manajemen mesin virtual Hyper-V lokal pada node ini</p>
+                </div>
+                <button onclick="closeVMModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+
+            <!-- New VM Collapsible Form -->
+            <div class="bg-gray-900/80 rounded-xl p-4 border border-gray-800 space-y-3">
+                <div class="flex justify-between items-center cursor-pointer" onclick="toggleNewVMForm()">
+                    <span class="text-xs font-bold text-gray-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus text-emerald-400"></i> Buat VM Hyper-V Baru
+                    </span>
+                    <i id="newVMChevron" class="fa-solid fa-chevron-down text-gray-400 text-xs transition-transform"></i>
+                </div>
+                <form id="newVMForm" class="hidden space-y-3 pt-2" onsubmit="submitNewVM(event)">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <label class="block text-gray-400 mb-1">Nama Virtual Machine</label>
+                            <input id="vmName" required type="text" placeholder="e.g. win11-sandbox-01" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">Virtual Switch</label>
+                            <select id="vmSwitch" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                                <option value="Default Switch">Default Switch</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">vCPU Cores</label>
+                            <input id="vmCores" type="number" min="1" max="64" value="2" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 mb-1">RAM (MB)</label>
+                            <input id="vmRAM" type="number" min="512" step="512" value="4096" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-gray-400 mb-1">Ukuran Hard Disk VHDX (GB)</label>
+                            <input id="vmDisk" type="number" min="10" max="2000" value="40" class="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-white font-mono focus:border-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2">
+                            <i class="fa-solid fa-play"></i> Provision VM Sekarang
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Existing VM List Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="uppercase bg-gray-950/80 text-gray-400 border-b border-gray-800">
+                        <tr>
+                            <th class="px-4 py-2.5">VM Name</th>
+                            <th class="px-4 py-2.5">State</th>
+                            <th class="px-4 py-2.5">Specs</th>
+                            <th class="px-4 py-2.5">VHDX Path</th>
+                            <th class="px-4 py-2.5 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vmTableBody" class="divide-y divide-gray-800/40 font-mono">
+                        <tr>
+                            <td colspan="5" class="px-4 py-6 text-center text-gray-500">Memuat VM...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="flex justify-end pt-2 border-t border-gray-800">
+                <button onclick="closeVMModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function openUSBModal() { document.getElementById('usbModal').classList.remove('hidden'); }
         function closeUSBModal() { document.getElementById('usbModal').classList.add('hidden'); }
@@ -302,11 +383,141 @@ const dashboardHTML = `<!DOCTYPE html>
                     '<td class=\"px-6 py-4 text-xs\">' + hypervBadge + '</td>' +
                     '<td class=\"px-6 py-4 text-right space-x-1.5\">' +
                         (!isOnline ? '<button onclick=\"triggerWoL(\'' + n.id + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
+                        '<button onclick=\"openVMModal(\'' + n.id + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
                         '<button onclick=\"openTerminal(\'' + n.id + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
                     '</td>' +
                 '</tr>';
             }
             tbody.innerHTML = html;
+        }
+
+        // VM Modal Management
+        let currentVMNodeId = null;
+
+        function openVMModal(nodeId, nodeName) {
+            currentVMNodeId = nodeId;
+            document.getElementById('vmNodeTitle').innerText = nodeName;
+            document.getElementById('vmModal').classList.remove('hidden');
+            loadVMs(nodeId);
+            loadSwitches(nodeId);
+        }
+
+        function closeVMModal() {
+            document.getElementById('vmModal').classList.add('hidden');
+            currentVMNodeId = null;
+        }
+
+        function toggleNewVMForm() {
+            const form = document.getElementById('newVMForm');
+            const chev = document.getElementById('newVMChevron');
+            if (form.classList.contains('hidden')) {
+                form.classList.remove('hidden');
+                chev.classList.add('rotate-180');
+            } else {
+                form.classList.add('hidden');
+                chev.classList.remove('rotate-180');
+            }
+        }
+
+        function loadSwitches(nodeId) {
+            fetch('/api/v1/nodes/' + nodeId + '/switches')
+                .then(r => r.json())
+                .then(switches => {
+                    const sel = document.getElementById('vmSwitch');
+                    sel.innerHTML = '';
+                    (switches || ['Default Switch']).forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s;
+                        opt.innerText = s;
+                        sel.appendChild(opt);
+                    });
+                })
+                .catch(() => {});
+        }
+
+        function loadVMs(nodeId) {
+            const tbody = document.getElementById('vmTableBody');
+            tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-500\">Memuat VM Hyper-V...</td></tr>';
+            
+            fetch('/api/v1/nodes/' + nodeId + '/vms')
+                .then(r => r.json())
+                .then(vms => {
+                    if (!vms || vms.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-500\">Belum ada VM di node ini. Buat VM baru menggunakan form di atas.</td></tr>';
+                        return;
+                    }
+                    let html = '';
+                    vms.forEach(vm => {
+                        const isRunning = vm.state === 'RUNNING';
+                        const badge = isRunning
+                            ? '<span class=\"px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20\">RUNNING</span>'
+                            : '<span class=\"px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-500/10 text-gray-400 border border-gray-500/20\">STOPPED</span>';
+                        
+                        html += '<tr class=\"hover:bg-gray-800/20\">' +
+                            '<td class=\"px-4 py-3 font-bold text-white\">' + escapeHtml(vm.name) + '</td>' +
+                            '<td class=\"px-4 py-3\">' + badge + '</td>' +
+                            '<td class=\"px-4 py-3 text-gray-300\">' + (vm.cpu_count || 2) + ' vCPU &bull; ' + (vm.memory_mb || 2048) + ' MB</td>' +
+                            '<td class=\"px-4 py-3 text-gray-500 truncate max-w-xs\" title=\"' + (vm.disk_path || '-') + '\">' + (vm.disk_path || '-') + '</td>' +
+                            '<td class=\"px-4 py-3 text-right space-x-1\">' +
+                                (!isRunning 
+                                    ? '<button onclick=\"controlVM(\'' + vm.id + '\', \'start\')\" class=\"px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30\"><i class=\"fa-solid fa-play\"></i></button>'
+                                    : '<button onclick=\"controlVM(\'' + vm.id + '\', \'stop\')\" class=\"px-2 py-1 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/30\"><i class=\"fa-solid fa-stop\"></i></button>' +
+                                      '<button onclick=\"controlVM(\'' + vm.id + '\', \'restart\')\" class=\"px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30\"><i class=\"fa-solid fa-arrows-rotate\"></i></button>') +
+                                '<button onclick=\"deleteVM(\'' + vm.id + '\')\" class=\"px-2 py-1 rounded bg-red-600/20 text-red-400 hover:bg-red-600/30\"><i class=\"fa-solid fa-trash\"></i></button>' +
+                            '</td>' +
+                        '</tr>';
+                    });
+                    tbody.innerHTML = html;
+                })
+                .catch(err => {
+                    tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-red-400\">Gagal memuat VM: ' + err + '</td></tr>';
+                });
+        }
+
+        function submitNewVM(e) {
+            e.preventDefault();
+            if (!currentVMNodeId) return;
+
+            const payload = {
+                name: document.getElementById('vmName').value,
+                switch_name: document.getElementById('vmSwitch').value,
+                cpu_count: parseInt(document.getElementById('vmCores').value, 10),
+                memory_mb: parseInt(document.getElementById('vmRAM').value, 10),
+                disk_size_gb: parseInt(document.getElementById('vmDisk').value, 10)
+            };
+
+            fetch('/api/v1/nodes/' + currentVMNodeId + '/vms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(() => {
+                alert('VM ' + payload.name + ' berhasil dibuat!');
+                toggleNewVMForm();
+                document.getElementById('newVMForm').reset();
+                loadVMs(currentVMNodeId);
+            })
+            .catch(err => alert('Gagal membuat VM: ' + err));
+        }
+
+        function controlVM(vmId, action) {
+            if (!currentVMNodeId) return;
+            fetch('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId + '/' + action, { method: 'POST' })
+                .then(r => r.json())
+                .then(() => loadVMs(currentVMNodeId))
+                .catch(err => alert('Gagal ' + action + ' VM: ' + err));
+        }
+
+        function deleteVM(vmId) {
+            if (!currentVMNodeId || !confirm('Yakin ingin menghapus VM ini beserta disk VHDX nya?')) return;
+            fetch('/api/v1/nodes/' + currentVMNodeId + '/vms/' + vmId, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(() => loadVMs(currentVMNodeId))
+                .catch(err => alert('Gagal menghapus VM: ' + err));
         }
 
         function triggerWoL(nodeId) {

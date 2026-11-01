@@ -55,6 +55,7 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 			existing.LastSeen = time.Now()
 			existing.Hardware = req.Hardware
 			existing.IPAddress = remoteIP
+			existing.AgentPort = req.Hardware.AgentPort
 			existing.WireGuardPubKey = req.WireGuardPubKey
 			_ = r.saveToFileLocked()
 			return existing, nil
@@ -66,14 +67,15 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 	r.nextMeshOctet++
 
 	node := &types.Node{
-		ID:             nodeID,
-		Name:           req.NodeName,
-		IPAddress:      remoteIP,
-		MeshIP:         meshIP,
-		Status:         types.NodeStatusOnline,
-		Hardware:       req.Hardware,
-		LastSeen:       time.Now(),
-		RegisteredAt:   time.Now(),
+		ID:              nodeID,
+		Name:            req.NodeName,
+		IPAddress:       remoteIP,
+		AgentPort:       req.Hardware.AgentPort,
+		MeshIP:          meshIP,
+		Status:          types.NodeStatusOnline,
+		Hardware:        req.Hardware,
+		LastSeen:        time.Now(),
+		RegisteredAt:    time.Now(),
 		WireGuardPubKey: req.WireGuardPubKey,
 	}
 

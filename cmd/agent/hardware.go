@@ -11,7 +11,7 @@ import (
 )
 
 // DetectHardware queries local system specifications.
-func DetectHardware() types.NodeHardware {
+func DetectHardware(agentPort int) types.NodeHardware {
 	hostname, _ := os.Hostname()
 	mac := getPrimaryMACAddress()
 	hyperv := checkHyperVEnabled()
@@ -27,6 +27,7 @@ func DetectHardware() types.NodeHardware {
 		TotalDiskBytes: 512 * 1024 * 1024 * 1024,
 		MACAddress:     mac,
 		HyperVEnabled:  hyperv,
+		AgentPort:      agentPort,
 	}
 }
 
