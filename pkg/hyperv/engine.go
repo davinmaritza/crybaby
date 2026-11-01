@@ -127,7 +127,8 @@ func (w *windowsEngine) CreateVM(req types.CreateVMRequest) (*types.VirtualMachi
 		if (!(Test-Path $vhdDir)) { New-Item -ItemType Directory -Path $vhdDir -Force | Out-Null }
 		New-VM -Name "%s" -MemoryStartupBytes %dMB -NewVHDPath "%s" -NewVHDSizeBytes %dGB -Generation 2 -SwitchName "%s" | Select-Object -ExpandProperty Id
 		Set-VMProcessor -VMName "%s" -Count %d
-	`, req.Name, req.MemoryMB, vhdPath, req.DiskSizeGB, req.SwitchName, req.Name, req.CPUCount)
+		Set-VM -Name "%s" -AutomaticStartAction StartIfRunning -AutomaticStopAction Save
+	`, req.Name, req.MemoryMB, vhdPath, req.DiskSizeGB, req.SwitchName, req.Name, req.CPUCount, req.Name)
 
 	out, err := runPowerShell(script)
 	if err != nil {

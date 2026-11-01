@@ -34,11 +34,16 @@ if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
 copy /y "%~dp0crybaby-agent.exe" "%TARGET_DIR%\" >nul
 copy /y "%~dp0crybaby-config.json" "%TARGET_DIR%\" >nul
 
-echo [3/5] Mengatur skema daya Windows (Anti-Sleep Policy)...
+echo [3/5] Mengatur skema daya Windows (Anti-Sleep & Anti-Accidental Shutdown)...
 :: Cegah PC masuk mode Sleep / Hibernasi saat dicolok listrik
 powercfg -change -standby-timeout-ac 0 >nul 2>&1
 powercfg -change -hibernate-timeout-ac 0 >nul 2>&1
 powercfg -change -monitor-timeout-ac 15 >nul 2>&1
+
+:: Proteksi Anti-Shutdown: Tombol fisik power casing diatur ke Do Nothing (0)
+:: Mencegah PC mati jika tombol power di casing tertekan tidak sengaja
+powercfg -setacvalueindex SCHEME_CURRENT SUB_BUTTONS PBUTTONACTION 0 >nul 2>&1
+powercfg -setactive SCHEME_CURRENT >nul 2>&1
 
 echo [4/5] Mendaftarkan Windows Service (CrybabyAgent)...
 sc stop CrybabyAgent >nul 2>&1
