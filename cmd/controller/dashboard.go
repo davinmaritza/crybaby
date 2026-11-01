@@ -75,6 +75,9 @@ const dashboardHTML = `<!DOCTYPE html>
         </div>
 
         <div class="flex items-center gap-3">
+            <button onclick="resetCluster()" title="Kosongkan semua node dan mulai fresh" class="px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-red-500/10 text-gray-400 hover:text-red-400 border border-gray-800 hover:border-red-500/30 text-xs font-semibold flex items-center gap-1.5 transition">
+                <i class="fa-solid fa-eraser"></i> Reset / Fresh
+            </button>
             <button onclick="openUSBModal()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-indigo-600/20">
                 <i class="fa-solid fa-usb"></i>
                 Generate Node USB
@@ -200,7 +203,9 @@ const dashboardHTML = `<!DOCTYPE html>
             </div>
             
             <p class="text-xs text-gray-300 leading-relaxed">
-                Colok USB flashdisk ke laptop ini, salin file <b>crybaby-agent.exe</b> dan <b>install.bat</b> ke dalam flashdisk. Saat dicolok ke PC Windows 11, jalankan <code>install.bat</code> sekali saja.
+                Ekstrak isi paket ZIP ke dalam flashdisk. Tancapkan ke PC Windows 11 target:
+                <br>&bull; Jalankan <b>install.bat</b> (Run as administrator) untuk bergabung ke cluster.
+                <br>&bull; Jalankan <b>uninstall.bat</b> jika ingin menghapus Crybaby &amp; mengembalikan PC ke normal.
             </p>
 
             <div class="space-y-2 bg-gray-950 p-3.5 rounded-xl border border-gray-800 text-xs font-mono">
@@ -375,6 +380,19 @@ const dashboardHTML = `<!DOCTYPE html>
                 }, 200);
             } catch (err) {
                 alert('Gagal menghapus node: ' + err.message);
+            }
+        }
+
+        async function resetCluster() {
+            if (!confirm('PERINGATAN: Apakah Anda yakin ingin me-reset cluster?\n\nSemua node yang terdaftar di dashboard akan dihapus untuk memulai dari kondisi bersih/fresh.')) return;
+            try {
+                await fetchJson('/api/v1/cluster/reset', { method: 'POST' });
+                alert('Cluster berhasil di-reset ke kondisi fresh.');
+                setTimeout(() => {
+                    fetch('/api/v1/nodes').then(r => r.json()).then(renderNodes).catch(() => {});
+                }, 200);
+            } catch (err) {
+                alert('Gagal me-reset cluster: ' + err.message);
             }
         }
 

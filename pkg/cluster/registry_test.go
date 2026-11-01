@@ -103,4 +103,16 @@ func TestNodeReaper(t *testing.T) {
 	if err := reg.RemoveNode("non-existent-id"); err == nil {
 		t.Errorf("expected error removing non-existent node")
 	}
+
+	// Test ResetCluster
+	_, _ = reg.RegisterNode(req, "192.168.1.100")
+	if len(reg.ListNodes()) == 0 {
+		t.Fatalf("expected node to be re-registered")
+	}
+	if err := reg.ResetCluster(); err != nil {
+		t.Fatalf("ResetCluster failed: %v", err)
+	}
+	if len(reg.ListNodes()) != 0 {
+		t.Errorf("expected 0 nodes after ResetCluster, got %d", len(reg.ListNodes()))
+	}
 }

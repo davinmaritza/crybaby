@@ -143,6 +143,16 @@ func (r *Registry) RemoveNode(id string) error {
 	return r.saveToFileLocked()
 }
 
+// ResetCluster wipes all nodes from the registry and resets persistence to a fresh empty state.
+func (r *Registry) ResetCluster() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.nodes = make(map[string]*types.Node)
+	r.nextMeshOctet = 2
+	return r.saveToFileLocked()
+}
+
 // ReapOfflineNodes checks for timed-out nodes and marks them OFFLINE.
 func (r *Registry) ReapOfflineNodes(timeout time.Duration) {
 	r.mu.Lock()

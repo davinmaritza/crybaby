@@ -119,6 +119,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/nodes/", s.handleNodeSubroutes)
 	mux.HandleFunc("/api/v1/provision/usb-profile", s.handleUSBProfile)
 	mux.HandleFunc("/api/v1/provision/usb-zip", s.handleUSBZip)
+	mux.HandleFunc("/api/v1/cluster/reset", s.handleClusterReset)
 	mux.HandleFunc("/api/v1/ws/telemetry", s.handleWebSocketTelemetry)
 	mux.HandleFunc("/api/v1/ws/terminal/", s.handleWebSocketTerminalProxy)
 
@@ -444,6 +445,33 @@ func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
 			_, _ = fExe.Write(exeData)
 		}
 	}
+
+	// 5. scripts/uninstall.bat
+	if unData, err := os.ReadFile("scripts/uninstall.bat"); err == nil {
+		if fUn, err := zw.Create("uninstall.bat"); err == nil {
+			_, _ = fUn.Write(unData)
+		}
+	}
+}
+
+func (s *Server) handleClusterReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+		return
+	}
+	if err := s.registry.ResetCluster(); err != nil {
+		jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Reset cluster failed: %v", err)})
+		return
+	}
+
+	// Broadcast empty cluster state to connected dashboards
+	s.hub.BroadcastJSON(map[string]interface{}{
+		"type":    "telemetry_tick",
+		"summary": s.registry.GetClusterSummary(),
+		"nodes":   s.registry.ListNodes(),
+	})
+
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "Cluster reset successfully. All nodes cleared."})
 }
 
 func (s *Server) handleWebSocketTerminalProxy(w http.ResponseWriter, r *http.Request) {
