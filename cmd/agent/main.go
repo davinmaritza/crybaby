@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -222,6 +224,38 @@ func startAgentRPCServer(port int, hv hyperv.Engine) {
 		}
 		defer session.Close()
 		session.HandleIO()
+	})
+
+	mux.HandleFunc("/api/v1/host/reboot", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"status": "reboot_initiated"})
+		go func() {
+			time.Sleep(1 * time.Second)
+			if runtime.GOOS == "windows" {
+				_ = exec.Command("shutdown", "/r", "/t", "3", "/c", "Reboot initiated from Crybaby Controller").Run()
+			} else {
+				_ = exec.Command("reboot").Run()
+			}
+		}()
+	})
+
+	mux.HandleFunc("/api/v1/host/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"status": "shutdown_initiated"})
+		go func() {
+			time.Sleep(1 * time.Second)
+			if runtime.GOOS == "windows" {
+				_ = exec.Command("shutdown", "/s", "/t", "3", "/c", "Shutdown initiated from Crybaby Controller").Run()
+			} else {
+				_ = exec.Command("shutdown", "-h", "now").Run()
+			}
+		}()
 	})
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)

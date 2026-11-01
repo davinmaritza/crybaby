@@ -208,13 +208,14 @@ const dashboardHTML = `<!DOCTYPE html>
                 <br>&bull; Jalankan <b>uninstall.bat</b> jika ingin menghapus Crybaby &amp; mengembalikan PC ke normal.
             </p>
 
-            <div class="space-y-2 bg-gray-950 p-3.5 rounded-xl border border-gray-800 text-xs font-mono">
-                <div class="flex justify-between text-gray-400">
-                    <span>Controller Endpoint:</span>
-                    <span class="text-white" id="modalEndpoint">http://127.0.0.1:{{PORT}}</span>
+            <div class="space-y-3 bg-gray-950 p-3.5 rounded-xl border border-gray-800 text-xs">
+                <div>
+                    <label for="usbHostInput" class="block text-gray-300 font-semibold mb-1">Alamat IP Controller Laptop (Switch LAN):</label>
+                    <input id="usbHostInput" type="text" autocomplete="off" placeholder="e.g. 192.168.100.168:8080" class="w-full bg-gray-900 border border-gray-700 focus:border-indigo-500 rounded-lg px-3 py-2 text-white font-mono text-xs">
+                    <p class="text-[11px] text-indigo-400 mt-1"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Otomatis mendeteksi interface IP LAN laptop Anda.</p>
                 </div>
-                <div class="flex justify-between text-gray-400">
-                    <span>Cluster Token:</span>
+                <div class="flex justify-between text-gray-400 font-mono text-xs pt-1 border-t border-gray-900">
+                    <span>Cluster Join Token:</span>
                     <span class="text-indigo-400 select-all" id="modalToken">{{CLUSTER_TOKEN}}</span>
                 </div>
             </div>
@@ -235,7 +236,7 @@ const dashboardHTML = `<!DOCTYPE html>
 
     <!-- Hyper-V VM Management Modal -->
     <div id="vmModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-        <div class="glass max-w-3xl w-full rounded-2xl border border-gray-700 p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <div class="glass max-w-4xl w-full rounded-2xl border border-gray-700 p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center border-b border-gray-800 pb-3">
                 <div>
                     <h3 class="font-bold text-white text-base flex items-center gap-2">
@@ -300,13 +301,14 @@ const dashboardHTML = `<!DOCTYPE html>
                             <th class="px-4 py-2.5">VM Name</th>
                             <th class="px-4 py-2.5">State</th>
                             <th class="px-4 py-2.5">Specs</th>
+                            <th class="px-4 py-2.5">IP Address</th>
                             <th class="px-4 py-2.5">VHDX Path</th>
                             <th class="px-4 py-2.5 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="vmTableBody" class="divide-y divide-gray-800/40 font-mono">
                         <tr>
-                            <td colspan="5" class="px-4 py-6 text-center text-gray-500">Memuat VM...</td>
+                            <td colspan="6" class="px-4 py-6 text-center text-gray-500">Memuat VM...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -340,14 +342,24 @@ const dashboardHTML = `<!DOCTYPE html>
     </div>
 
     <script>
-        function openUSBModal() { 
-            const ep = document.getElementById('modalEndpoint');
-            if (ep) ep.innerText = window.location.origin;
+        async function openUSBModal() { 
+            try {
+                const res = await fetchJson('/api/v1/provision/usb-profile');
+                if (res && res.detected_host) {
+                    const hostInput = document.getElementById('usbHostInput');
+                    if (hostInput) hostInput.value = res.detected_host;
+                }
+            } catch (e) {
+                const hostInput = document.getElementById('usbHostInput');
+                if (hostInput && !hostInput.value) hostInput.value = window.location.host;
+            }
             document.getElementById('usbModal').classList.remove('hidden'); 
         }
         function closeUSBModal() { document.getElementById('usbModal').classList.add('hidden'); }
         function downloadUSBPack() {
-            window.location.href = '/api/v1/provision/usb-zip';
+            const hostInput = document.getElementById('usbHostInput');
+            const hostVal = (hostInput ? hostInput.value : '').trim();
+            window.location.href = '/api/v1/provision/usb-zip?host=' + encodeURIComponent(hostVal);
         }
 
         async function fetchJson(url, options) {
@@ -471,6 +483,8 @@ const dashboardHTML = `<!DOCTYPE html>
                         (!isOnline ? '<button onclick=\"triggerWoL(\'' + escapeHtml(n.id) + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
                         '<button onclick=\"openVMModal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
                         '<button onclick=\"openTerminal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
+                        (isOnline ? '<button onclick=\"rebootHost(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" title=\"Restart PC Host ini\" class=\"px-2.5 py-1 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-xs font-medium border border-blue-500/20 transition\"><i class=\"fa-solid fa-arrows-rotate mr-1\"></i>Reboot</button>' : '') +
+                        (isOnline ? '<button onclick=\"shutdownHost(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" title=\"Shutdown PC Host ini\" class=\"px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium border border-red-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>Power Off</button>' : '') +
                         (!isOnline ? '<button onclick=\"removeNode(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" title=\"Hapus node offline ini dari cluster\" class=\"px-2.5 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium border border-red-500/20 transition\"><i class=\"fa-solid fa-trash\"></i></button>' : '') +
                     '</td>' +
                 '</tr>';
@@ -524,12 +538,12 @@ const dashboardHTML = `<!DOCTYPE html>
 
         function loadVMs(nodeId) {
             const tbody = document.getElementById('vmTableBody');
-            tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-500\">Memuat VM Hyper-V...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-4 py-6 text-center text-gray-500\">Memuat VM Hyper-V...</td></tr>';
             
             fetchJson('/api/v1/nodes/' + nodeId + '/vms')
                 .then(vms => {
                     if (!vms || vms.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-500\">Belum ada VM di node ini. Buat VM baru menggunakan form di atas.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-4 py-6 text-center text-gray-500\">Belum ada VM di node ini. Buat VM baru menggunakan form di atas.</td></tr>';
                         return;
                     }
                     let html = '';
@@ -539,10 +553,15 @@ const dashboardHTML = `<!DOCTYPE html>
                             ? '<span class=\"px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20\">RUNNING</span>'
                             : '<span class=\"px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-500/10 text-gray-400 border border-gray-500/20\">STOPPED</span>';
                         
+                        const ipBadges = (vm.ip_addresses && vm.ip_addresses.length)
+                            ? vm.ip_addresses.map(ip => '<span class=\"px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px]\">' + escapeHtml(ip) + '</span>').join(' ')
+                            : '<span class=\"text-gray-500 text-[11px]\">-</span>';
+
                         html += '<tr class=\"hover:bg-gray-800/20\">' +
                             '<td class=\"px-4 py-3 font-bold text-white\">' + escapeHtml(vm.name) + '</td>' +
                             '<td class=\"px-4 py-3\">' + badge + '</td>' +
                             '<td class=\"px-4 py-3 text-gray-300\">' + (vm.cpu_count || 2) + ' vCPU &bull; ' + (vm.memory_mb || 2048) + ' MB</td>' +
+                            '<td class=\"px-4 py-3 font-mono\">' + ipBadges + '</td>' +
                             '<td class=\"px-4 py-3 text-gray-500 truncate max-w-xs\" title=\"' + (vm.disk_path || '-') + '\">' + (vm.disk_path || '-') + '</td>' +
                             '<td class=\"px-4 py-3 text-right space-x-1\">' +
                                 (!isRunning 
@@ -556,7 +575,7 @@ const dashboardHTML = `<!DOCTYPE html>
                     tbody.innerHTML = html;
                 })
                 .catch(err => {
-                    tbody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-amber-400/90 font-medium\"><i class=\"fa-solid fa-triangle-exclamation mr-2 text-amber-400\"></i>Gagal memuat VM: ' + escapeHtml(err.message) + '</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan=\"6\" class=\"px-4 py-6 text-center text-amber-400/90 font-medium\"><i class=\"fa-solid fa-triangle-exclamation mr-2 text-amber-400\"></i>Gagal memuat VM: ' + escapeHtml(err.message) + '</td></tr>';
                 });
         }
 
@@ -605,6 +624,26 @@ const dashboardHTML = `<!DOCTYPE html>
             fetchJson('/api/v1/nodes/' + nodeId + '/wol', { method: 'POST' })
                 .then(d => alert('Wake-on-LAN packet terkirim ke MAC: ' + d.mac))
                 .catch(err => alert('Gagal mengirim WoL: ' + err.message));
+        }
+
+        async function rebootHost(nodeId, nodeName) {
+            if (!confirm('PERINGATAN: Restart PC fisik \"' + nodeName + '\"?\n\nSemua VM yang berjalan di node ini akan tersimpan otomatis dan menyala kembali saat Windows selesai booting.')) return;
+            try {
+                await fetchJson('/api/v1/nodes/' + nodeId + '/reboot', { method: 'POST' });
+                alert('Perintah restart telah dikirim ke PC ' + nodeName);
+            } catch (err) {
+                alert('Gagal restart PC: ' + err.message);
+            }
+        }
+
+        async function shutdownHost(nodeId, nodeName) {
+            if (!confirm('PERINGATAN: Matikan (Shutdown) PC fisik \"' + nodeName + '\"?\n\nUntuk menyalakannya kembali nanti, Anda bisa menggunakan tombol WoL.')) return;
+            try {
+                await fetchJson('/api/v1/nodes/' + nodeId + '/shutdown', { method: 'POST' });
+                alert('Perintah shutdown telah dikirim ke PC ' + nodeName);
+            } catch (err) {
+                alert('Gagal shutdown PC: ' + err.message);
+            }
         }
 
         let termWS = null;

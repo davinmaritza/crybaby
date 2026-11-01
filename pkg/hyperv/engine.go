@@ -40,7 +40,7 @@ type windowsEngine struct {
 }
 
 func (w *windowsEngine) ListVMs() ([]types.VirtualMachine, error) {
-	script := `Get-VM | Select-Object Id, Name, State, CPUUsage, MemoryAssigned, Uptime | ConvertTo-Json -Compress`
+	script := `Get-VM | Select-Object Id, Name, State, CPUUsage, MemoryAssigned, Uptime, @{N='IPAddresses';E={$_.NetworkAdapters.IPAddresses -join ','}}, @{N='HardDrives';E={$_.HardDrives.Path -join ','}} | ConvertTo-Json -Compress`
 	out, err := runPowerShell(script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query Hyper-V VMs: %w", err)
@@ -61,6 +61,8 @@ func (w *windowsEngine) ListVMs() ([]types.VirtualMachine, error) {
 		Name           string `json:"Name"`
 		State          int    `json:"State"`
 		MemoryAssigned int64  `json:"MemoryAssigned"`
+		IPAddresses    string `json:"IPAddresses"`
+		HardDrives     string `json:"HardDrives"`
 	}
 
 	var raw []psVM
@@ -79,13 +81,25 @@ func (w *windowsEngine) ListVMs() ([]types.VirtualMachine, error) {
 			state = types.VMStateSaved
 		}
 
+		var ips []string
+		if item.IPAddresses != "" {
+			for _, ip := range strings.Split(item.IPAddresses, ",") {
+				ip = strings.TrimSpace(ip)
+				if ip != "" && !strings.HasPrefix(ip, "fe80:") {
+					ips = append(ips, ip)
+				}
+			}
+		}
+
 		vms = append(vms, types.VirtualMachine{
-			ID:        item.Id,
-			NodeID:    w.nodeID,
-			Name:      item.Name,
-			State:     state,
-			MemoryMB:  uint64(item.MemoryAssigned / (1024 * 1024)),
-			CreatedAt: time.Now(),
+			ID:          item.Id,
+			NodeID:      w.nodeID,
+			Name:        item.Name,
+			State:       state,
+			MemoryMB:    uint64(item.MemoryAssigned / (1024 * 1024)),
+			DiskPath:    item.HardDrives,
+			IPAddresses: ips,
+			CreatedAt:   time.Now(),
 		})
 	}
 	return vms, nil
@@ -332,6 +346,7 @@ func (s *simulatedEngine) StartVM(vmID string) error {
 	}
 	vm.State = types.VMStateRunning
 	vm.UptimeSeconds = 0
+	vm.IPAddresses = []string{"192.168.100.192"}
 	return nil
 }
 
@@ -344,6 +359,7 @@ func (s *simulatedEngine) StopVM(vmID string, force bool) error {
 	}
 	vm.State = types.VMStateStopped
 	vm.UptimeSeconds = 0
+	vm.IPAddresses = nil
 	return nil
 }
 

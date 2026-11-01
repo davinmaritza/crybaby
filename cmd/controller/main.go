@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -307,6 +308,30 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 		}
 		s.proxyToNode(node, "switches", w, r)
 
+	case "reboot":
+		if r.Method != http.MethodPost {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		node, found := s.registry.GetNode(nodeID)
+		if !found {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
+			return
+		}
+		s.proxyToNode(node, "host/reboot", w, r)
+
+	case "shutdown":
+		if r.Method != http.MethodPost {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		node, found := s.registry.GetNode(nodeID)
+		if !found {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
+			return
+		}
+		s.proxyToNode(node, "host/shutdown", w, r)
+
 	default:
 		jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Unknown node subroute"})
 	}
@@ -364,10 +389,41 @@ func (s *Server) proxyToNode(node *types.Node, subpath string, w http.ResponseWr
 	_, _ = io.Copy(w, resp.Body)
 }
 
+func getOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err == nil {
+		defer conn.Close()
+		localAddr := conn.LocalAddr().(*net.UDPAddr)
+		if !localAddr.IP.IsLoopback() && localAddr.IP.To4() != nil {
+			return localAddr.IP.String()
+		}
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, addr := range addrs {
+		if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ip := ipnet.IP.To4(); ip != nil {
+				return ip.String()
+			}
+		}
+	}
+	return ""
+}
+
 func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
+	host := r.URL.Query().Get("host")
 	if host == "" {
-		host = "127.0.0.1:" + s.port
+		host = r.Host
+	}
+	if host == "" || strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+		lanIP := getOutboundIP()
+		if lanIP != "" {
+			host = lanIP + ":" + s.port
+		} else if host == "" {
+			host = "127.0.0.1:" + s.port
+		}
 	}
 	profile := types.USBProvisionProfile{
 		ControllerURL: fmt.Sprintf("http://%s", host),
@@ -375,7 +431,11 @@ func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
 		ClusterName:   "Crybaby-Primary-Cluster",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
 	}
-	jsonResponse(w, http.StatusOK, profile)
+	jsonResponse(w, http.StatusOK, map[string]interface{}{
+		"profile":        profile,
+		"detected_host":  host,
+		"controller_url": profile.ControllerURL,
+	})
 }
 
 func (s *Server) handleWebSocketTelemetry(w http.ResponseWriter, r *http.Request) {
@@ -401,9 +461,17 @@ func jsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 }
 
 func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
+	host := r.URL.Query().Get("host")
 	if host == "" {
-		host = "127.0.0.1:" + s.port
+		host = r.Host
+	}
+	if host == "" || strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
+		lanIP := getOutboundIP()
+		if lanIP != "" {
+			host = lanIP + ":" + s.port
+		} else if host == "" {
+			host = "127.0.0.1:" + s.port
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
