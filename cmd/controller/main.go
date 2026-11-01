@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +24,8 @@ import (
 	"github.com/davinmaritza/crybaby/pkg/types"
 	"github.com/gorilla/websocket"
 )
+
+const ControllerVersion = "0.5.0"
 
 type Server struct {
 	registry     *cluster.Registry
@@ -123,6 +128,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/cluster/reset", s.handleClusterReset)
 	mux.HandleFunc("/api/v1/ws/telemetry", s.handleWebSocketTelemetry)
 	mux.HandleFunc("/api/v1/ws/terminal/", s.handleWebSocketTerminalProxy)
+	mux.HandleFunc("/api/v1/binaries/crybaby-agent.exe", s.handleServeAgentBinary)
 
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/svg+xml")
@@ -265,11 +271,72 @@ func (s *Server) handleNodeSubroutes(w http.ResponseWriter, r *http.Request) {
 			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid heartbeat JSON"})
 			return
 		}
-		if err := s.registry.UpdateHeartbeat(nodeID, payload.Metrics); err != nil {
+		if err := s.registry.UpdateHeartbeat(nodeID, payload.Metrics, payload.Version); err != nil {
 			jsonResponse(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 			return
 		}
 		jsonResponse(w, http.StatusOK, map[string]string{"status": "recorded"})
+
+	case "update":
+		if r.Method != http.MethodPost {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		node, found := s.registry.GetNode(nodeID)
+		if !found {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Node not found"})
+			return
+		}
+		if node.Status == types.NodeStatusOffline {
+			jsonResponse(w, http.StatusBadGateway, map[string]string{"error": fmt.Sprintf("Node '%s' saat ini OFFLINE dan tidak dapat di-update.", node.Name)})
+			return
+		}
+
+		binPath := filepath.Join(".", "bin", "crybaby-agent.exe")
+		if _, err := os.Stat(binPath); err != nil {
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{
+				"error": "Biner agent 'bin/crybaby-agent.exe' belum terkompilasi di controller. Jalankan 'GOOS=windows GOARCH=amd64 go build -o bin/crybaby-agent.exe ./cmd/agent' terlebih dahulu.",
+			})
+			return
+		}
+
+		lanIP := getOutboundIP()
+		if lanIP == "" || lanIP == "127.0.0.1" {
+			lanIP = "localhost"
+		}
+		downloadURL := fmt.Sprintf("http://%s:%s/api/v1/binaries/crybaby-agent.exe", lanIP, s.port)
+
+		updateReq := types.AgentUpdateRequest{
+			DownloadURL:   downloadURL,
+			TargetVersion: ControllerVersion,
+		}
+		reqBytes, _ := json.Marshal(updateReq)
+
+		targetHost := node.IPAddress
+		if targetHost == "" {
+			targetHost = node.MeshIP
+		}
+		agentURL := fmt.Sprintf("http://%s:%d/api/v1/agent/update", targetHost, node.AgentPort)
+
+		resp, err := http.Post(agentURL, "application/json", bytes.NewBuffer(reqBytes))
+		if err != nil {
+			jsonResponse(w, http.StatusBadGateway, map[string]string{
+				"error": fmt.Sprintf("Gagal menghubungi agent pada %s: %v", agentURL, err),
+			})
+			return
+		}
+		defer resp.Body.Close()
+
+		var agentResp types.AgentUpdateResponse
+		if err := json.NewDecoder(resp.Body).Decode(&agentResp); err != nil {
+			jsonResponse(w, resp.StatusCode, map[string]string{
+				"status":  "triggered",
+				"message": "Pembaruan agent dikirim, agent sedang memperbarui diri...",
+			})
+			return
+		}
+
+		jsonResponse(w, resp.StatusCode, agentResp)
 
 	case "wol":
 		if r.Method != http.MethodPost {
@@ -440,6 +507,22 @@ func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
 		"detected_host":  host,
 		"controller_url": profile.ControllerURL,
 	})
+}
+
+func (s *Server) handleServeAgentBinary(w http.ResponseWriter, r *http.Request) {
+	binPath := filepath.Join(".", "bin", "crybaby-agent.exe")
+	info, err := os.Stat(binPath)
+	if err != nil || info.IsDir() {
+		jsonResponse(w, http.StatusNotFound, map[string]string{
+			"error": "Agent binary not found in bin/crybaby-agent.exe. Please build it first on controller via: GOOS=windows GOARCH=amd64 go build -o bin/crybaby-agent.exe ./cmd/agent",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="crybaby-agent.exe"`)
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	http.ServeFile(w, r, binPath)
 }
 
 func (s *Server) handleWebSocketTelemetry(w http.ResponseWriter, r *http.Request) {

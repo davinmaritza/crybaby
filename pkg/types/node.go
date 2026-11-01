@@ -43,38 +43,53 @@ type NodeMetrics struct {
 
 // Node represents a managed Windows 11 machine in the Crybaby cluster.
 type Node struct {
-	ID             string       `json:"id"`
-	Name           string       `json:"name"`
-	IPAddress      string       `json:"ip_address"`
-	AgentPort      int          `json:"agent_port"`
-	MeshIP         string       `json:"mesh_ip"`
-	Status         NodeStatus   `json:"status"`
-	Hardware       NodeHardware `json:"hardware"`
-	LatestMetrics  NodeMetrics  `json:"latest_metrics"`
-	LastSeen       time.Time    `json:"last_seen"`
-	RegisteredAt   time.Time    `json:"registered_at"`
-	WireGuardPubKey string      `json:"wireguard_pubkey"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	IPAddress       string       `json:"ip_address"`
+	AgentPort       int          `json:"agent_port"`
+	MeshIP          string       `json:"mesh_ip"`
+	Status          NodeStatus   `json:"status"`
+	Version         string       `json:"version"`
+	Hardware        NodeHardware `json:"hardware"`
+	LatestMetrics   NodeMetrics  `json:"latest_metrics"`
+	LastSeen        time.Time    `json:"last_seen"`
+	RegisteredAt    time.Time    `json:"registered_at"`
+	WireGuardPubKey string       `json:"wireguard_pubkey"`
 }
 
 // RegisterNodeRequest is submitted by the node agent during initial onboarding.
 type RegisterNodeRequest struct {
-	ClusterToken   string       `json:"cluster_token"`
-	NodeName       string       `json:"node_name"`
-	Hardware       NodeHardware `json:"hardware"`
-	WireGuardPubKey string      `json:"wireguard_pubkey"`
+	ClusterToken    string       `json:"cluster_token"`
+	NodeName        string       `json:"node_name"`
+	Version         string       `json:"version"`
+	Hardware        NodeHardware `json:"hardware"`
+	WireGuardPubKey string       `json:"wireguard_pubkey"`
 }
 
 // RegisterNodeResponse returns cluster configuration to the newly joined node.
 type RegisterNodeResponse struct {
-	NodeID          string `json:"node_id"`
-	MeshIP          string `json:"mesh_ip"`
+	NodeID           string `json:"node_id"`
+	MeshIP           string `json:"mesh_ip"`
 	ControllerMeshIP string `json:"controller_mesh_ip"`
-	WireGuardConfig string `json:"wireguard_config"`
-	HeartbeatSec    int    `json:"heartbeat_sec"`
+	WireGuardConfig  string `json:"wireguard_config"`
+	HeartbeatSec     int    `json:"heartbeat_sec"`
 }
 
 // HeartbeatPayload is sent periodically from the node agent to the controller.
 type HeartbeatPayload struct {
 	NodeID  string      `json:"node_id"`
+	Version string      `json:"version"`
 	Metrics NodeMetrics `json:"metrics"`
+}
+
+// AgentUpdateRequest defines the target payload dispatched to the agent to trigger self-update.
+type AgentUpdateRequest struct {
+	DownloadURL   string `json:"download_url"`
+	TargetVersion string `json:"target_version"`
+}
+
+// AgentUpdateResponse reports the initiation status of the self-update.
+type AgentUpdateResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }

@@ -497,6 +497,26 @@ const dashboardHTML = `<!DOCTYPE html>
             document.getElementById('statVMs').innerText = s.total_active_vms || 0;
         }
 
+        const CONTROLLER_VERSION = '0.5.0';
+
+        function updateNode(nodeId, nodeName) {
+            if (!confirm('Update Crybaby Agent pada node \"' + nodeName + '\" ke versi terbaru (v' + CONTROLLER_VERSION + ') via OTA over LAN?\n\nAgent akan mengunduh biner baru dari laptop controller dan me-restart service otomatis dalam 2-3 detik.')) {
+                return;
+            }
+
+            fetchJson('/api/v1/nodes/' + nodeId + '/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(data => {
+                alert('Pembaruan terkirim ke ' + nodeName + '!\n' + (data.message || 'Agent sedang memperbarui diri dan akan aktif kembali dalam beberapa detik.'));
+                setTimeout(fetchNodesManual, 3000);
+            })
+            .catch(err => {
+                alert('Gagal memperbarui node: ' + err.message);
+            });
+        }
+
         function renderNodes(nodes) {
             const tbody = document.getElementById('nodeTableBody');
             if (!nodes || nodes.length === 0) {
@@ -511,6 +531,12 @@ const dashboardHTML = `<!DOCTYPE html>
                     ? '<span class=\"px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20\"><span class=\"w-1.5 h-1.5 inline-block rounded-full bg-emerald-400 mr-1 pulse-dot\"></span>ONLINE</span>'
                     : '<span class=\"px-2 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-400 border border-gray-500/20\">OFFLINE</span>';
 
+                const nodeVersion = n.version || '0.4.0';
+                const isOutdated = isOnline && (nodeVersion !== CONTROLLER_VERSION);
+                const versionBadge = isOutdated
+                    ? '<span title=\"Versi node: v' + escapeHtml(nodeVersion) + ' (Update tersedia: v' + CONTROLLER_VERSION + ')\" onclick=\"updateNode(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"cursor-pointer text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 hover:bg-amber-500/30 transition\"><i class=\"fa-solid fa-arrow-up-from-bracket\"></i> v' + escapeHtml(nodeVersion) + '</span>'
+                    : '<span class=\"text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 border border-gray-700\">v' + escapeHtml(nodeVersion) + '</span>';
+
                 const cpu = (n.latest_metrics && n.latest_metrics.cpu_usage_pct !== undefined) ? n.latest_metrics.cpu_usage_pct.toFixed(1) + '%' : '-';
                 const ram = (n.latest_metrics && n.latest_metrics.ram_used_bytes) ? (n.latest_metrics.ram_used_bytes / (1024*1024*1024)).toFixed(1) + ' GB' : '-';
                 const hw = n.hardware || {};
@@ -521,13 +547,14 @@ const dashboardHTML = `<!DOCTYPE html>
                     : '<span class=\"text-amber-400 font-semibold\"><i class=\"fa-solid fa-triangle-exclamation mr-1\"></i>Disabled</span>';
 
                 html += '<tr class=\"hover:bg-gray-800/30 transition\">' +
-                    '<td class=\"px-6 py-4 font-medium text-white flex items-center gap-2\"><i class=\"fa-brands fa-windows text-blue-400\"></i>' + escapeHtml(n.name) + '</td>' +
+                    '<td class=\"px-6 py-4 font-medium text-white flex items-center gap-2\"><i class=\"fa-brands fa-windows text-blue-400\"></i>' + escapeHtml(n.name) + ' ' + versionBadge + '</td>' +
                     '<td class=\"px-6 py-4\">' + statusBadge + '</td>' +
                     '<td class=\"px-6 py-4 font-mono text-xs\"><span class=\"text-indigo-400 font-semibold\">' + (n.mesh_ip || '-') + '</span><br><span class=\"text-gray-500\">' + (n.ip_address || '-') + '</span></td>' +
                     '<td class=\"px-6 py-4 text-xs text-gray-300\">' + escapeHtml(hw.cpu_model || 'Unknown CPU') + '<br><span class=\"text-gray-500\">' + cpuCores + ' Cores &bull; ' + totalRamGB + ' GB RAM</span></td>' +
                     '<td class=\"px-6 py-4 text-xs font-mono\"><span class=\"text-white font-semibold\">CPU: ' + cpu + '</span><br><span class=\"text-gray-400\">RAM: ' + ram + '</span></td>' +
                     '<td class=\"px-6 py-4 text-xs\">' + hypervBadge + '</td>' +
                     '<td class=\"px-6 py-4 text-right space-x-1.5\">' +
+                        (isOutdated ? '<button onclick=\"updateNode(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" title=\"Update agent ke v' + CONTROLLER_VERSION + ' via OTA\" class=\"px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition\"><i class=\"fa-solid fa-arrow-up-from-bracket mr-1\"></i>Update</button>' : '') +
                         (!isOnline ? '<button onclick=\"triggerWoL(\'' + escapeHtml(n.id) + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
                         '<button onclick=\"openVMModal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
                         '<button onclick=\"openTerminal(\'' + escapeHtml(n.id) + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +

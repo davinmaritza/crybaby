@@ -34,6 +34,7 @@ Modern homelabs, software agencies, and development teams often have idle consum
 - **Flawless Gen 2 Linux & Windows ISO Boot:** Uses SCSI `Add-VMDvdDrive` and auto-disables Secure Boot (`-EnableSecureBoot $false`) for seamless UEFI boot on any OS.
 - **Proxmox-Grade Checkpoints / Snapshots:** Instant point-in-time VM snapshots, rollback restoration, and deletion directly from the dashboard modal.
 - **Live VM Telemetry & 1-Click RDP:** Real-time CPU% utilization and dynamic Memory Demand indicators, plus an instant `.rdp` profile launcher button.
+- **1-Click Remote OTA Update:** Seamless Over-The-Air self-update over the local LAN without re-plugging USB flashdisks. The controller serves compiled binaries and the agent safely bypasses Windows executable file locking using detached updater scripts.
 - **1-Click Clean Lifecycle:** Self-contained USB flashdisk installation, complete uninstaller (`scripts/uninstall.bat`), and a single-button dashboard cluster reset.
 
 ---
@@ -212,11 +213,13 @@ Nodes and VMs can access these files over the LAN switch via:
 | :--- | :--- | :--- |
 | `GET` | `/` | Serves the embedded single-page management dashboard. |
 | `GET` | `/iso/*` | Static HTTP ISO repository file server. |
+| `GET` | `/api/v1/binaries/crybaby-agent.exe` | Serves compiled Windows agent binary for remote OTA updates. |
 | `POST` | `/api/v1/auth/login` | Authenticates administrator session and issues token. |
 | `POST` | `/api/v1/cluster/reset` | Purges all nodes from cluster registry and clears state. |
 | `POST` | `/api/v1/nodes/register` | Registers a new agent node and returns mesh configuration. |
 | `GET` | `/api/v1/nodes` | Returns all registered nodes with their latest telemetry. |
 | `GET` | `/api/v1/nodes/:id` | Returns status and hardware details for a single node. |
+| `POST` | `/api/v1/nodes/:id/update` | Triggers remote OTA self-update on target cluster node. |
 | `DELETE` | `/api/v1/nodes/:id` | Removes an offline/decommissioned node from cluster. |
 | `POST` | `/api/v1/nodes/:id/wol` | Dispatches Wake-on-LAN magic packet to node MAC address. |
 | `POST` | `/api/v1/nodes/:id/reboot` | Triggers graceful remote reboot on physical Windows host. |

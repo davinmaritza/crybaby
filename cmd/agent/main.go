@@ -19,8 +19,11 @@ import (
 	"github.com/davinmaritza/crybaby/pkg/mesh"
 	"github.com/davinmaritza/crybaby/pkg/terminal"
 	"github.com/davinmaritza/crybaby/pkg/types"
+	"github.com/davinmaritza/crybaby/pkg/updater"
 	"github.com/gorilla/websocket"
 )
+
+const AgentVersion = "0.5.0"
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -313,6 +316,38 @@ func startAgentRPCServer(port int, hv hyperv.Engine) {
 		}()
 	})
 
+	mux.HandleFunc("/api/v1/agent/update", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var updateReq types.AgentUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
+			http.Error(w, "Invalid update request JSON", http.StatusBadRequest)
+			return
+		}
+
+		if updateReq.DownloadURL == "" {
+			http.Error(w, "DownloadURL cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("🔄 Received OTA Update command: target version '%s' from '%s'", updateReq.TargetVersion, updateReq.DownloadURL)
+
+		jsonResponse(w, http.StatusOK, types.AgentUpdateResponse{
+			Status:  "updating",
+			Message: fmt.Sprintf("Agent update to %s initiated, restarting service...", updateReq.TargetVersion),
+		})
+
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			if err := updater.ApplyUpdate(updateReq.DownloadURL, updateReq.TargetVersion, ""); err != nil {
+				log.Printf("❌ Failed to apply self-update: %v", err)
+			}
+		}()
+	})
+
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
 	log.Printf("🔌 Agent Hyper-V RPC listener active on %s", addr)
 	_ = http.ListenAndServe(addr, mux)
@@ -320,9 +355,10 @@ func startAgentRPCServer(port int, hv hyperv.Engine) {
 
 func registerWithController(cfg Config, hw types.NodeHardware, pubKey string) (*types.RegisterNodeResponse, error) {
 	reqBody := types.RegisterNodeRequest{
-		ClusterToken:   cfg.ClusterToken,
-		NodeName:       cfg.NodeName,
-		Hardware:       hw,
+		ClusterToken:    cfg.ClusterToken,
+		NodeName:        cfg.NodeName,
+		Version:         AgentVersion,
+		Hardware:        hw,
 		WireGuardPubKey: pubKey,
 	}
 
@@ -353,6 +389,7 @@ func registerWithController(cfg Config, hw types.NodeHardware, pubKey string) (*
 func sendHeartbeat(controllerURL, nodeID string, metrics types.NodeMetrics) error {
 	payload, err := json.Marshal(types.HeartbeatPayload{
 		NodeID:  nodeID,
+		Version: AgentVersion,
 		Metrics: metrics,
 	})
 	if err != nil {

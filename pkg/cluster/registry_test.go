@@ -14,6 +14,7 @@ func TestNodeRegistrationAndHeartbeat(t *testing.T) {
 	req := types.RegisterNodeRequest{
 		ClusterToken: token,
 		NodeName:     "node-desktop-win11",
+		Version:      "0.4.5",
 		Hardware: types.NodeHardware{
 			Hostname:      "WIN11-LAB-01",
 			CPUCores:      8,
@@ -29,6 +30,10 @@ func TestNodeRegistrationAndHeartbeat(t *testing.T) {
 		t.Fatalf("unexpected registration failure: %v", err)
 	}
 
+	if node.Version != "0.4.5" {
+		t.Errorf("expected version 0.4.5, got '%s'", node.Version)
+	}
+
 	if node.MeshIP != "10.42.0.2" {
 		t.Errorf("expected first mesh IP 10.42.0.2, got '%s'", node.MeshIP)
 	}
@@ -37,14 +42,19 @@ func TestNodeRegistrationAndHeartbeat(t *testing.T) {
 		t.Errorf("expected node status ONLINE, got '%s'", node.Status)
 	}
 
-	// Test heartbeat update
+	// Test heartbeat update with new version
 	metrics := types.NodeMetrics{
 		CPUUsagePct:   12.5,
 		RAMUsedBytes:  4 * 1024 * 1024 * 1024,
 		ActiveVMCount: 2,
 	}
-	if err := reg.UpdateHeartbeat(node.ID, metrics); err != nil {
+	if err := reg.UpdateHeartbeat(node.ID, metrics, "0.5.0"); err != nil {
 		t.Fatalf("heartbeat update failed: %v", err)
+	}
+
+	updatedNode, _ := reg.GetNode(node.ID)
+	if updatedNode.Version != "0.5.0" {
+		t.Errorf("expected updated version 0.5.0, got '%s'", updatedNode.Version)
 	}
 
 	summary := reg.GetClusterSummary()

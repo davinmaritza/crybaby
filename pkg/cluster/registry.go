@@ -62,6 +62,9 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 			existing.IPAddress = remoteIP
 			existing.AgentPort = agentPort
 			existing.WireGuardPubKey = req.WireGuardPubKey
+			if req.Version != "" {
+				existing.Version = req.Version
+			}
 			_ = r.saveToFileLocked()
 			return existing, nil
 		}
@@ -78,6 +81,7 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 		AgentPort:       agentPort,
 		MeshIP:          meshIP,
 		Status:          types.NodeStatusOnline,
+		Version:         req.Version,
 		Hardware:        req.Hardware,
 		LastSeen:        time.Now(),
 		RegisteredAt:    time.Now(),
@@ -90,7 +94,7 @@ func (r *Registry) RegisterNode(req types.RegisterNodeRequest, remoteIP string) 
 }
 
 // UpdateHeartbeat records incoming telemetry and refreshes node liveness.
-func (r *Registry) UpdateHeartbeat(nodeID string, metrics types.NodeMetrics) error {
+func (r *Registry) UpdateHeartbeat(nodeID string, metrics types.NodeMetrics, version ...string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -102,6 +106,9 @@ func (r *Registry) UpdateHeartbeat(nodeID string, metrics types.NodeMetrics) err
 	node.Status = types.NodeStatusOnline
 	node.LastSeen = time.Now()
 	node.LatestMetrics = metrics
+	if len(version) > 0 && version[0] != "" {
+		node.Version = version[0]
+	}
 	return nil
 }
 
