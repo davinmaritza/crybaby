@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 	"github.com/davinmaritza/crybaby/pkg/cluster"
 	"github.com/davinmaritza/crybaby/pkg/mesh"
 	"github.com/davinmaritza/crybaby/pkg/types"
+	"github.com/gorilla/websocket"
 )
 
 type Server struct {
@@ -116,7 +118,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/nodes/register", s.handleRegisterNode)
 	mux.HandleFunc("/api/v1/nodes/", s.handleNodeSubroutes)
 	mux.HandleFunc("/api/v1/provision/usb-profile", s.handleUSBProfile)
+	mux.HandleFunc("/api/v1/provision/usb-zip", s.handleUSBZip)
 	mux.HandleFunc("/api/v1/ws/telemetry", s.handleWebSocketTelemetry)
+	mux.HandleFunc("/api/v1/ws/terminal/", s.handleWebSocketTerminalProxy)
 
 	// Embedded web dashboard
 	mux.HandleFunc("/", s.handleWebDashboard)
@@ -364,4 +368,118 @@ func jsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
+	host := r.Host
+	if host == "" {
+		host = "127.0.0.1:" + s.port
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"crybaby-usb-pack.zip\"")
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	// 1. crybaby-config.json
+	cfg := types.USBProvisionProfile{
+		ControllerURL: fmt.Sprintf("http://%s", host),
+		ClusterToken:  s.clusterToken,
+		ClusterName:   "Crybaby-Primary-Cluster",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+	}
+	cfgData, _ := json.MarshalIndent(cfg, "", "  ")
+	fConfig, err := zw.Create("crybaby-config.json")
+	if err == nil {
+		_, _ = fConfig.Write(cfgData)
+	}
+
+	// 2. scripts/install.bat
+	if batData, err := os.ReadFile("scripts/install.bat"); err == nil {
+		if fBat, err := zw.Create("install.bat"); err == nil {
+			_, _ = fBat.Write(batData)
+		}
+	}
+
+	// 3. scripts/enable-hyperv.ps1
+	if psData, err := os.ReadFile("scripts/enable-hyperv.ps1"); err == nil {
+		if fPs, err := zw.Create("enable-hyperv.ps1"); err == nil {
+			_, _ = fPs.Write(psData)
+		}
+	}
+
+	// 4. bin/crybaby-agent.exe
+	if exeData, err := os.ReadFile("bin/crybaby-agent.exe"); err == nil {
+		if fExe, err := zw.Create("crybaby-agent.exe"); err == nil {
+			_, _ = fExe.Write(exeData)
+		}
+	}
+}
+
+func (s *Server) handleWebSocketTerminalProxy(w http.ResponseWriter, r *http.Request) {
+	nodeID := strings.TrimPrefix(r.URL.Path, "/api/v1/ws/terminal/")
+	node, found := s.registry.GetNode(nodeID)
+	if !found {
+		http.Error(w, "Node not found", http.StatusNotFound)
+		return
+	}
+
+	browserConn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Browser terminal WS upgrade failed: %v", err)
+		return
+	}
+	defer browserConn.Close()
+
+	port := node.AgentPort
+	if port == 0 {
+		port = 8081
+	}
+
+	targetWS := fmt.Sprintf("ws://%s:%d/api/v1/ws/terminal", node.IPAddress, port)
+	agentConn, _, err := websocket.DefaultDialer.Dial(targetWS, nil)
+	if err != nil {
+		log.Printf("Failed to dial agent terminal WS at %s: %v", targetWS, err)
+		_ = browserConn.WriteJSON(types.TerminalMessage{
+			Type: types.TerminalMsgError,
+			Data: fmt.Sprintf("Node agent unreachable at %s: %v", targetWS, err),
+		})
+		return
+	}
+	defer agentConn.Close()
+
+	errChan := make(chan error, 2)
+
+	// Forward browser -> agent
+	go func() {
+		for {
+			msgType, data, err := browserConn.ReadMessage()
+			if err != nil {
+				errChan <- err
+				return
+			}
+			if err := agentConn.WriteMessage(msgType, data); err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	// Forward agent -> browser
+	go func() {
+		for {
+			msgType, data, err := agentConn.ReadMessage()
+			if err != nil {
+				errChan <- err
+				return
+			}
+			if err := browserConn.WriteMessage(msgType, data); err != nil {
+				errChan <- err
+				return
+			}
+		}
+	}()
+
+	<-errChan
 }

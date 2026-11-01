@@ -25,6 +25,9 @@ const dashboardHTML = `<!DOCTYPE html>
     <title>Crybaby | Windows 11 Cluster Orchestrator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -306,11 +309,32 @@ const dashboardHTML = `<!DOCTYPE html>
         </div>
     </div>
 
+    <!-- Interactive Terminal Shell Modal -->
+    <div id="terminalModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="glass max-w-4xl w-full rounded-2xl border border-gray-700 p-5 space-y-3 shadow-2xl flex flex-col h-[75vh]">
+            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
+                <div>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-terminal text-indigo-400"></i>
+                        Remote Shell &bull; <span id="termNodeTitle" class="text-indigo-400">Node</span>
+                    </h3>
+                    <p class="text-xs text-gray-400">Direct interactive PTY terminal (PowerShell / Shell)</p>
+                </div>
+                <button onclick="closeTerminal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+            <div id="terminalContainer" class="flex-1 bg-black rounded-lg p-2 overflow-hidden border border-gray-800 font-mono"></div>
+            <div class="flex justify-between items-center pt-2 border-t border-gray-800 text-xs text-gray-500">
+                <span>Tekan <kbd class="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300">Ctrl+C</kbd> atau ketik <code>exit</code> untuk keluar</span>
+                <button onclick="closeTerminal()" class="px-4 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function openUSBModal() { document.getElementById('usbModal').classList.remove('hidden'); }
         function closeUSBModal() { document.getElementById('usbModal').classList.add('hidden'); }
         function downloadUSBPack() {
-            window.location.href = '/api/v1/provision/usb-profile';
+            window.location.href = '/api/v1/provision/usb-zip';
         }
 
         // Real-time WebSocket Stream
@@ -384,7 +408,7 @@ const dashboardHTML = `<!DOCTYPE html>
                     '<td class=\"px-6 py-4 text-right space-x-1.5\">' +
                         (!isOnline ? '<button onclick=\"triggerWoL(\'' + n.id + '\')\" class=\"px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium border border-amber-500/20 transition\"><i class=\"fa-solid fa-power-off mr-1\"></i>WoL</button>' : '') +
                         '<button onclick=\"openVMModal(\'' + n.id + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-medium border border-emerald-500/20 transition\"><i class=\"fa-solid fa-cube mr-1\"></i>VMs</button>' +
-                        '<button onclick=\"openTerminal(\'' + n.id + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
+                        '<button onclick=\"openTerminal(\'' + n.id + '\', \'' + escapeHtml(n.name) + '\')\" class=\"px-2.5 py-1 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-medium border border-indigo-500/20 transition\"><i class=\"fa-solid fa-terminal mr-1\"></i>Shell</button>' +
                     '</td>' +
                 '</tr>';
             }
@@ -527,8 +551,90 @@ const dashboardHTML = `<!DOCTYPE html>
                 .catch(err => alert('Gagal mengirim WoL: ' + err));
         }
 
-        function openTerminal(nodeId) {
-            alert('Membuka terminal shell untuk Node ID: ' + nodeId);
+        let termWS = null;
+        let term = null;
+        let fitAddon = null;
+
+        function openTerminal(nodeId, nodeName) {
+            document.getElementById('termNodeTitle').innerText = nodeName || nodeId;
+            document.getElementById('terminalModal').classList.remove('hidden');
+
+            const container = document.getElementById('terminalContainer');
+            container.innerHTML = '';
+
+            if (term) {
+                try { term.dispose(); } catch (e) {}
+            }
+
+            term = new Terminal({
+                cursorBlink: true,
+                theme: {
+                    background: '#0B0F19',
+                    foreground: '#F3F4F6',
+                    cursor: '#6366F1',
+                    selectionBackground: '#4338CA'
+                },
+                fontSize: 13,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace'
+            });
+
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(container);
+            fitAddon.fit();
+
+            const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = wsProto + '//' + window.location.host + '/api/v1/ws/terminal/' + nodeId;
+            
+            term.writeln('\x1b[36m⚡ Connecting to Crybaby Node Terminal...\x1b[0m\r\n');
+            termWS = new WebSocket(wsUrl);
+
+            termWS.onopen = () => {
+                term.writeln('\x1b[32m✔ Connected to node shell.\x1b[0m\r\n');
+            };
+
+            termWS.onmessage = (e) => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    if (msg.type === 'output' && msg.data) {
+                        term.write(msg.data);
+                    } else if (msg.type === 'error') {
+                        term.writeln('\r\n\x1b[31m[Error] ' + msg.data + '\x1b[0m\r\n');
+                    }
+                } catch (err) {
+                    term.write(e.data);
+                }
+            };
+
+            termWS.onerror = () => {
+                term.writeln('\r\n\x1b[31m✖ WebSocket error encountered.\x1b[0m\r\n');
+            };
+
+            termWS.onclose = () => {
+                term.writeln('\r\n\x1b[33m⚡ Terminal session disconnected.\x1b[0m\r\n');
+            };
+
+            term.onData(data => {
+                if (termWS && termWS.readyState === WebSocket.OPEN) {
+                    termWS.send(JSON.stringify({ type: 'input', data: data }));
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (fitAddon) fitAddon.fit();
+            });
+        }
+
+        function closeTerminal() {
+            document.getElementById('terminalModal').classList.add('hidden');
+            if (termWS) {
+                termWS.close();
+                termWS = null;
+            }
+            if (term) {
+                term.dispose();
+                term = null;
+            }
         }
 
         function fetchNodesManual() {

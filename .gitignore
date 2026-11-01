@@ -20,6 +20,7 @@ crybaby-cluster.json
 logs/
 tmp/
 .temp/
+scratch/
 
 # IDE & OS Artifacts
 .vscode/

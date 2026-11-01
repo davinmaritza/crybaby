@@ -15,8 +15,14 @@ import (
 
 	"github.com/davinmaritza/crybaby/pkg/hyperv"
 	"github.com/davinmaritza/crybaby/pkg/mesh"
+	"github.com/davinmaritza/crybaby/pkg/terminal"
 	"github.com/davinmaritza/crybaby/pkg/types"
+	"github.com/gorilla/websocket"
 )
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
 
 type Config struct {
 	ControllerURL string `json:"controller_url"`
@@ -200,6 +206,22 @@ func startAgentRPCServer(port int, hv hyperv.Engine) {
 			return
 		}
 		jsonResponse(w, http.StatusOK, switches)
+	})
+
+	mux.HandleFunc("/api/v1/ws/terminal", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Printf("Agent terminal WebSocket upgrade failed: %v", err)
+			return
+		}
+		session, err := terminal.NewSession(conn)
+		if err != nil {
+			log.Printf("Failed to spawn terminal session: %v", err)
+			_ = conn.Close()
+			return
+		}
+		defer session.Close()
+		session.HandleIO()
 	})
 
 	addr := fmt.Sprintf("0.0.0.0:%d", port)
