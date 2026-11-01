@@ -46,10 +46,10 @@
 - `POST /api/v1/iso/download`: Starts background URL download into `./iso`.
 - `GET /api/v1/iso/downloads`: Returns active download jobs with progress percentage.
 
-- [ ] **Step 1: Write failing tests in `pkg/iso/catalog_test.go` for catalog listing and safe URL download**
-- [ ] **Step 2: Implement `pkg/iso/catalog.go` with background streaming and thread-safe progress**
-- [ ] **Step 3: Register ISO catalog and download endpoints in `cmd/controller/main.go`**
-- [ ] **Step 4: Verify tests pass**
+- [x] **Step 1: Write failing tests in `pkg/iso/catalog_test.go` for catalog listing and safe URL download**
+- [x] **Step 2: Implement `pkg/iso/catalog.go` with background streaming and thread-safe progress**
+- [x] **Step 3: Register ISO catalog and download endpoints in `cmd/controller/main.go`**
+- [x] **Step 4: Verify tests pass**
 
 ---
 
@@ -63,9 +63,9 @@
 - Update `CreateVM` in `pkg/hyperv/engine.go`: If `req.ISOPath` matches `^https?://`, auto-download and cache to `C:\Crybaby\ISOs\<filename>` if absent, then mount local file path.
 - In `simulatedEngine`: Support simulated ISO caching and verify attachment.
 
-- [ ] **Step 1: Add unit tests in `pkg/hyperv/engine_test.go` for HTTP ISO auto-caching**
-- [ ] **Step 2: Implement auto-caching routine in `windowsEngine.CreateVM` and `simulatedEngine.CreateVM`**
-- [ ] **Step 3: Verify tests pass**
+- [x] **Step 1: Add unit tests in `pkg/hyperv/engine_test.go` for HTTP ISO auto-caching**
+- [x] **Step 2: Implement auto-caching routine in `windowsEngine.CreateVM` and `simulatedEngine.CreateVM`**
+- [x] **Step 3: Verify tests pass**
 
 ---
 
@@ -86,10 +86,10 @@
   - `POST /api/v1/vms/:vm_id/expand-disk` with `{"new_size_gb": 64}`
 - Controller proxy routes for resize and expand-disk.
 
-- [ ] **Step 1: Write failing tests in `pkg/hyperv/engine_test.go` for `ResizeVM` and `ExpandDisk`**
-- [ ] **Step 2: Add `ResizeVM` and `ExpandDisk` to `hyperv.Engine` interface and implementations**
-- [ ] **Step 3: Wire endpoints in `cmd/agent/main.go` and proxy in `cmd/controller/main.go`**
-- [ ] **Step 4: Verify tests pass**
+- [x] **Step 1: Write failing tests in `pkg/hyperv/engine_test.go` for `ResizeVM` and `ExpandDisk`**
+- [x] **Step 2: Add `ResizeVM` and `ExpandDisk` to `hyperv.Engine` interface and implementations**
+- [x] **Step 3: Wire endpoints in `cmd/agent/main.go` and proxy in `cmd/controller/main.go`**
+- [x] **Step 4: Verify tests pass**
 
 ---
 
@@ -107,10 +107,10 @@
 - Agent endpoint: `POST /api/v1/vms/:vm_id/clone` with `{"new_name": "ubuntu-clone-01"}`
 - Controller proxy route for cloning.
 
-- [ ] **Step 1: Write failing tests in `pkg/hyperv/engine_test.go` for `CloneVM`**
-- [ ] **Step 2: Implement `CloneVM` in `windowsEngine` and `simulatedEngine`**
-- [ ] **Step 3: Wire clone endpoint in `cmd/agent/main.go` and `cmd/controller/main.go`**
-- [ ] **Step 4: Verify tests pass**
+- [x] **Step 1: Write failing tests in `pkg/hyperv/engine_test.go` for `CloneVM`**
+- [x] **Step 2: Implement `CloneVM` in `windowsEngine` and `simulatedEngine`**
+- [x] **Step 3: Wire clone endpoint in `cmd/agent/main.go` and `cmd/controller/main.go`**
+- [x] **Step 4: Verify tests pass**
 
 ---
 
@@ -130,9 +130,9 @@
   - "Expand Disk" button and modal on each VM row.
   - "Clone VM" button and modal on each VM row.
 
-- [ ] **Step 1: Add telemetry rolling history in `cmd/controller/main.go`**
-- [ ] **Step 2: Update `cmd/controller/dashboard.go` with modals, sparkline canvas, and action buttons**
-- [ ] **Step 3: Verify dashboard builds and renders cleanly**
+- [x] **Step 1: Add telemetry rolling history in `cmd/controller/main.go`**
+- [x] **Step 2: Update `cmd/controller/dashboard.go` with modals, sparkline canvas, and action buttons**
+- [x] **Step 3: Verify dashboard builds and renders cleanly**
 
 ---
 
@@ -145,7 +145,7 @@
 - Sync: Notion workspace (pages `01`, `05`, `07`, `13`, `14`, `15`, `18`, Root)
 - Modify: `chat.md`
 
-- [ ] **Step 1: Execute full test suite across all packages**
-- [ ] **Step 2: Compile fresh Windows AMD64 and Linux binaries**
-- [ ] **Step 3: Commit and push changes to GitHub**
-- [ ] **Step 4: Sync Notion workspace and update `chat.md`**
+- [x] **Step 1: Execute full test suite across all packages**
+- [x] **Step 2: Compile fresh Windows AMD64 and Linux binaries**
+- [x] **Step 3: Commit and push changes to GitHub**
+- [x] **Step 4: Sync Notion workspace and update `chat.md`**
