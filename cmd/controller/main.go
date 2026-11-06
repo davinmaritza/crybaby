@@ -527,10 +527,19 @@ func (s *Server) resolveControllerHost(r *http.Request) string {
 	return host
 }
 
+func (s *Server) resolveScheme(r *http.Request) string {
+	proto := r.Header.Get("X-Forwarded-Proto")
+	if proto == "https" || r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
 func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
 	host := s.resolveControllerHost(r)
+	scheme := s.resolveScheme(r)
 	profile := types.USBProvisionProfile{
-		ControllerURL: fmt.Sprintf("http://%s", host),
+		ControllerURL: fmt.Sprintf("%s://%s", scheme, host),
 		ClusterToken:  s.clusterToken,
 		ClusterName:   "Crybaby-Primary-Cluster",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -597,7 +606,8 @@ func (s *Server) handleServeLinuxAgentBinary(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleWebInstallerPS1(w http.ResponseWriter, r *http.Request) {
 	host := s.resolveControllerHost(r)
-	controllerURL := fmt.Sprintf("http://%s", host)
+	scheme := s.resolveScheme(r)
+	controllerURL := fmt.Sprintf("%s://%s", scheme, host)
 
 	script := fmt.Sprintf(`# ============================================================
 # CRYBABY CLUSTER - 1-CLICK SERVER NODE INSTALLER (POWERSHELL)
@@ -720,7 +730,8 @@ Write-Host ""
 
 func (s *Server) handleWebInstallerSH(w http.ResponseWriter, r *http.Request) {
 	host := s.resolveControllerHost(r)
-	controllerURL := fmt.Sprintf("http://%s", host)
+	scheme := s.resolveScheme(r)
+	controllerURL := fmt.Sprintf("%s://%s", scheme, host)
 
 	script := fmt.Sprintf(`#!/usr/bin/env bash
 # ============================================================
@@ -847,6 +858,7 @@ func jsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 
 func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
 	host := s.resolveControllerHost(r)
+	scheme := s.resolveScheme(r)
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"crybaby-usb-pack.zip\"")
@@ -856,7 +868,7 @@ func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
 
 	// 1. crybaby-config.json
 	cfg := types.USBProvisionProfile{
-		ControllerURL: fmt.Sprintf("http://%s", host),
+		ControllerURL: fmt.Sprintf("%s://%s", scheme, host),
 		ClusterToken:  s.clusterToken,
 		ClusterName:   "Crybaby-Primary-Cluster",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
