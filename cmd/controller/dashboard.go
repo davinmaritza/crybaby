@@ -83,8 +83,8 @@ const dashboardHTML = `<!DOCTYPE html>
                 ISO Catalog
             </button>
             <button onclick="openUSBModal()" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition shadow-md shadow-indigo-600/20">
-                <i class="fa-solid fa-usb"></i>
-                Generate Node USB
+                <i class="fa-solid fa-plus-circle"></i>
+                Tambah Node / Installer Server
             </button>
             <div class="h-6 w-px bg-gray-800"></div>
             <span id="wsStatus" class="text-xs font-mono px-2.5 py-1 rounded-md bg-gray-900 border border-gray-800 text-emerald-400">WS CONNECTED</span>
@@ -200,7 +200,7 @@ const dashboardHTML = `<!DOCTYPE html>
                             <td colspan="7" class="px-6 py-12 text-center text-gray-500 text-sm">
                                 <i class="fa-solid fa-satellite-dish text-2xl mb-3 block text-gray-600"></i>
                                 Belum ada Windows 11 Node yang terhubung.<br>
-                                Klik <b class="text-indigo-400">"Generate Node USB"</b> di kanan atas untuk membuat flashdisk installer pertama Anda.
+                                Klik <b class="text-indigo-400">"Tambah Node / Installer Server"</b> di kanan atas untuk menghubungkan PC server pertama Anda.
                             </td>
                         </tr>
                     </tbody>
@@ -209,45 +209,111 @@ const dashboardHTML = `<!DOCTYPE html>
         </div>
     </main>
 
-    <!-- USB Provisioning Modal -->
+    <!-- Node Provisioning & Server Installer Modal -->
     <div id="usbModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
-        <div class="glass max-w-lg w-full rounded-2xl border border-gray-700 p-6 space-y-4 shadow-2xl">
+        <div class="glass max-w-xl w-full rounded-2xl border border-gray-700 p-6 space-y-4 shadow-2xl">
             <div class="flex justify-between items-center border-b border-gray-800 pb-3">
-                <h3 class="font-bold text-white text-base flex items-center gap-2">
-                    <i class="fa-solid fa-usb text-indigo-400"></i>
-                    1-Click USB Node Provisioner
-                </h3>
-                <button onclick="closeUSBModal()" class="text-gray-400 hover:text-white">&times;</button>
-            </div>
-            
-            <p class="text-xs text-gray-300 leading-relaxed">
-                Ekstrak isi paket ZIP ke dalam flashdisk. Tancapkan ke PC Windows 11 target:
-                <br>&bull; Jalankan <b>install.bat</b> (Run as administrator) untuk bergabung ke cluster.
-                <br>&bull; Jalankan <b>uninstall.bat</b> jika ingin menghapus Crybaby &amp; mengembalikan PC ke normal.
-            </p>
-
-            <div class="space-y-3 bg-gray-950 p-3.5 rounded-xl border border-gray-800 text-xs">
                 <div>
-                    <label for="usbHostInput" class="block text-gray-300 font-semibold mb-1">Alamat IP Controller Laptop (Switch LAN):</label>
-                    <input id="usbHostInput" type="text" autocomplete="off" placeholder="e.g. 192.168.100.168:8080" class="w-full bg-gray-900 border border-gray-700 focus:border-indigo-500 rounded-lg px-3 py-2 text-white font-mono text-xs">
-                    <p class="text-[11px] text-indigo-400 mt-1"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Otomatis mendeteksi interface IP LAN laptop Anda.</p>
+                    <h3 class="font-bold text-white text-base flex items-center gap-2">
+                        <i class="fa-solid fa-server text-indigo-400"></i>
+                        Tambah Node / Server Installer
+                    </h3>
+                    <p class="text-xs text-gray-400 mt-0.5">Pasang dan hubungkan PC server fisik ke cluster Crybaby</p>
                 </div>
-                <div class="flex justify-between text-gray-400 font-mono text-xs pt-1 border-t border-gray-900">
-                    <span>Cluster Join Token:</span>
-                    <span class="text-indigo-400 select-all" id="modalToken">{{CLUSTER_TOKEN}}</span>
-                </div>
+                <button onclick="closeUSBModal()" class="text-gray-400 hover:text-white text-lg">&times;</button>
             </div>
 
-            <div class="bg-indigo-950/40 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-200">
-                <i class="fa-solid fa-circle-info mr-1 text-indigo-400"></i>
-                Installer akan otomatis memasang agent sebagai <b>Windows Service</b> dan mengonfigurasi skema <b>Anti-Sleep</b>. Flashdisk bisa dicabut setelah instalasi selesai.
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-                <button onclick="closeUSBModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
-                <button onclick="downloadUSBPack()" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-2">
-                    <i class="fa-solid fa-download"></i> Unduh Paket USB (.zip)
+            <!-- Tab Selectors -->
+            <div class="flex bg-gray-950 p-1 rounded-xl border border-gray-800 text-xs">
+                <button id="tabBtnPS1" onclick="switchInstallTab('ps1')" class="flex-1 py-2 rounded-lg font-semibold transition text-white bg-indigo-600 shadow-sm">
+                    <i class="fa-brands fa-windows mr-1.5"></i> 1-Line PowerShell
                 </button>
+                <button id="tabBtnZip" onclick="switchInstallTab('zip')" class="flex-1 py-2 rounded-lg font-semibold transition text-gray-400 hover:text-gray-200">
+                    <i class="fa-solid fa-file-zipper mr-1.5"></i> Offline ZIP / USB
+                </button>
+                <button id="tabBtnLinux" onclick="switchInstallTab('linux')" class="flex-1 py-2 rounded-lg font-semibold transition text-gray-400 hover:text-gray-200">
+                    <i class="fa-brands fa-linux mr-1.5"></i> Linux Server
+                </button>
+            </div>
+
+            <!-- Tab 1: 1-Line PowerShell (Recommended) -->
+            <div id="tabContentPS1" class="space-y-3">
+                <p class="text-xs text-gray-300 leading-relaxed">
+                    Di PC Server Windows 11 target: Buka <b class="text-white">PowerShell</b>, tempel perintah di bawah dan tekan <b class="text-white">Enter</b>:
+                </p>
+
+                <div class="bg-gray-950 border border-gray-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                    <code id="ps1CommandText" class="font-mono text-xs text-indigo-300 select-all break-all">irm http://127.0.0.1:8080/install | iex</code>
+                    <button onclick="copyCommand('ps1CommandText', this)" class="shrink-0 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-copy"></i> Salin
+                    </button>
+                </div>
+
+                <div class="bg-indigo-950/40 border border-indigo-500/20 rounded-xl p-3 text-xs text-indigo-200 space-y-1">
+                    <div class="font-semibold text-indigo-300 flex items-center gap-1.5">
+                        <i class="fa-solid fa-bolt text-indigo-400"></i> Otomatis &amp; Siap Pakai:
+                    </div>
+                    <ul class="list-disc list-inside text-[11px] text-gray-300 space-y-0.5">
+                        <li>Meminta izin Administrator (UAC) otomatis jika belum elevated</li>
+                        <li>Mengunduh biner <code class="text-indigo-300">crybaby-agent.exe</code> &amp; konfigurasi token cluster</li>
+                        <li>Mengonfigurasi skema daya <b>Anti-Sleep</b> &amp; tombol power casing fisik (Server Mode)</li>
+                        <li>Membuka port Windows Firewall (RPC TCP 8081, WireGuard UDP 51820, ICMP Ping)</li>
+                        <li>Mengaktifkan <b>Microsoft Hyper-V</b> &amp; mendaftarkan service Windows background</li>
+                    </ul>
+                </div>
+
+                <div class="text-[11px] text-gray-400 flex items-center gap-1">
+                    <i class="fa-solid fa-keyboard text-gray-500"></i>
+                    <span>Tips: Dari kotak dialog Run (<kbd class="px-1 py-0.5 bg-gray-800 rounded text-gray-300">Win + R</kbd>), ketik: <code class="text-indigo-400 font-mono">powershell -c "irm http://[IP]:8080/install | iex"</code></span>
+                </div>
+            </div>
+
+            <!-- Tab 2: Offline ZIP / USB -->
+            <div id="tabContentZip" class="space-y-3 hidden">
+                <p class="text-xs text-gray-300 leading-relaxed">
+                    Unduh paket installer offline ke Flashdisk atau download langsung di PC server target. Cukup <b class="text-white">Double-Click install.bat</b> (otomatis meminta Administrator UAC tanpa perlu klik kanan).
+                </p>
+
+                <div class="space-y-3 bg-gray-950 p-3.5 rounded-xl border border-gray-800 text-xs">
+                    <div>
+                        <label for="usbHostInput" class="block text-gray-300 font-semibold mb-1">Alamat IP Controller LAN:</label>
+                        <input id="usbHostInput" oninput="updateInstallerHost(this.value)" type="text" autocomplete="off" placeholder="e.g. 192.168.100.168:8080" class="w-full bg-gray-900 border border-gray-700 focus:border-indigo-500 rounded-lg px-3 py-2 text-white font-mono text-xs">
+                        <p class="text-[11px] text-indigo-400 mt-1"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>Otomatis mendeteksi interface IP LAN controller Anda.</p>
+                    </div>
+                    <div class="flex justify-between text-gray-400 font-mono text-xs pt-1 border-t border-gray-900">
+                        <span>Cluster Join Token:</span>
+                        <span class="text-indigo-400 select-all" id="modalToken">{{CLUSTER_TOKEN}}</span>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-1">
+                    <button onclick="downloadUSBPack()" class="w-full py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center justify-center gap-2 transition shadow-md shadow-indigo-600/20">
+                        <i class="fa-solid fa-download"></i> Unduh Paket Offline ZIP (.zip)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 3: Linux Server -->
+            <div id="tabContentLinux" class="space-y-3 hidden">
+                <p class="text-xs text-gray-300 leading-relaxed">
+                    Untuk server Ubuntu/Debian/RHEL target, jalankan satu baris perintah ini di terminal:
+                </p>
+
+                <div class="bg-gray-950 border border-gray-800 rounded-xl p-3 flex items-center justify-between gap-3">
+                    <code id="shCommandText" class="font-mono text-xs text-emerald-300 select-all break-all">curl -sSL http://127.0.0.1:8080/install.sh | sudo bash</code>
+                    <button onclick="copyCommand('shCommandText', this)" class="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-copy"></i> Salin
+                    </button>
+                </div>
+
+                <div class="bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-200">
+                    <i class="fa-solid fa-circle-check mr-1 text-emerald-400"></i>
+                    Otomatis mengunduh biner Linux <code class="text-emerald-300">crybaby-agent-linux</code>, menyimpan config cluster di <code class="text-emerald-300">/etc/crybaby/</code>, dan mendaftarkan service daemon <code class="text-emerald-300">systemd</code>.
+                </div>
+            </div>
+
+            <div class="flex justify-end border-t border-gray-800 pt-3">
+                <button onclick="closeUSBModal()" class="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-xs font-semibold text-gray-300">Tutup</button>
             </div>
         </div>
     </div>
@@ -589,17 +655,65 @@ const dashboardHTML = `<!DOCTYPE html>
     </div>
 
     <script>
+        function switchInstallTab(tab) {
+            const tabs = ['ps1', 'zip', 'linux'];
+            tabs.forEach(t => {
+                const btn = document.getElementById('tabBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+                const content = document.getElementById('tabContent' + t.charAt(0).toUpperCase() + t.slice(1));
+                if (t === tab) {
+                    if (btn) {
+                        btn.className = 'flex-1 py-2 rounded-lg font-semibold transition text-white bg-indigo-600 shadow-sm';
+                    }
+                    if (content) content.classList.remove('hidden');
+                } else {
+                    if (btn) {
+                        btn.className = 'flex-1 py-2 rounded-lg font-semibold transition text-gray-400 hover:text-gray-200';
+                    }
+                    if (content) content.classList.add('hidden');
+                }
+            });
+        }
+
+        function updateInstallerHost(hostVal) {
+            const host = (hostVal || window.location.host || '127.0.0.1:8080').trim();
+            const ps1Elem = document.getElementById('ps1CommandText');
+            if (ps1Elem) ps1Elem.innerText = 'irm http://' + host + '/install | iex';
+            const shElem = document.getElementById('shCommandText');
+            if (shElem) shElem.innerText = 'curl -sSL http://' + host + '/install.sh | sudo bash';
+        }
+
+        function copyCommand(elemId, btn) {
+            const elem = document.getElementById(elemId);
+            if (!elem) return;
+            const text = elem.innerText.trim();
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<i class="fa-solid fa-check"></i> Tersalin!';
+                btn.classList.add('bg-emerald-600');
+                btn.classList.remove('bg-indigo-600');
+                setTimeout(() => {
+                    btn.innerHTML = orig;
+                    btn.classList.remove('bg-emerald-600');
+                    btn.classList.add('bg-indigo-600');
+                }, 2000);
+            }).catch(() => {
+                alert('Tersalin: ' + text);
+            });
+        }
+
         async function openUSBModal() { 
+            let detected = window.location.host;
             try {
                 const res = await fetchJson('/api/v1/provision/usb-profile');
                 if (res && res.detected_host) {
-                    const hostInput = document.getElementById('usbHostInput');
-                    if (hostInput) hostInput.value = res.detected_host;
+                    detected = res.detected_host;
                 }
-            } catch (e) {
-                const hostInput = document.getElementById('usbHostInput');
-                if (hostInput && !hostInput.value) hostInput.value = window.location.host;
-            }
+            } catch (e) {}
+
+            const hostInput = document.getElementById('usbHostInput');
+            if (hostInput) hostInput.value = detected;
+            updateInstallerHost(detected);
+
             document.getElementById('usbModal').classList.remove('hidden'); 
         }
         function closeUSBModal() { document.getElementById('usbModal').classList.add('hidden'); }

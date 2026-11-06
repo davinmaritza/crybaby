@@ -144,7 +144,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/cluster/reset", s.handleClusterReset)
 	mux.HandleFunc("/api/v1/ws/telemetry", s.handleWebSocketTelemetry)
 	mux.HandleFunc("/api/v1/ws/terminal/", s.handleWebSocketTerminalProxy)
+	mux.HandleFunc("/install", s.handleWebInstallerPS1)
+	mux.HandleFunc("/install.ps1", s.handleWebInstallerPS1)
+	mux.HandleFunc("/install.sh", s.handleWebInstallerSH)
 	mux.HandleFunc("/api/v1/binaries/crybaby-agent.exe", s.handleServeAgentBinary)
+	mux.HandleFunc("/api/v1/binaries/crybaby-agent-linux", s.handleServeLinuxAgentBinary)
 	mux.HandleFunc("/api/v1/iso", s.handleListISOs)
 	mux.HandleFunc("/api/v1/iso/download", s.handleDownloadISO)
 	mux.HandleFunc("/api/v1/iso/downloads", s.handleListISODownloads)
@@ -507,7 +511,7 @@ func getOutboundIP() string {
 	return ""
 }
 
-func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
+func (s *Server) resolveControllerHost(r *http.Request) string {
 	host := r.URL.Query().Get("host")
 	if host == "" {
 		host = r.Host
@@ -520,6 +524,11 @@ func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
 			host = "127.0.0.1:" + s.port
 		}
 	}
+	return host
+}
+
+func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
+	host := s.resolveControllerHost(r)
 	profile := types.USBProvisionProfile{
 		ControllerURL: fmt.Sprintf("http://%s", host),
 		ClusterToken:  s.clusterToken,
@@ -533,10 +542,32 @@ func (s *Server) handleUSBProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func findBinaryPath(name string) (string, os.FileInfo, error) {
+	candidates := []string{
+		filepath.Join(".", "bin", name),
+		filepath.Join("..", "..", "bin", name),
+		filepath.Join("..", "bin", name),
+	}
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p, info, nil
+		}
+	}
+	return "", nil, os.ErrNotExist
+}
+
+func findFileCandidate(candidates ...string) (string, []byte, error) {
+	for _, p := range candidates {
+		if data, err := os.ReadFile(p); err == nil {
+			return p, data, nil
+		}
+	}
+	return "", nil, os.ErrNotExist
+}
+
 func (s *Server) handleServeAgentBinary(w http.ResponseWriter, r *http.Request) {
-	binPath := filepath.Join(".", "bin", "crybaby-agent.exe")
-	info, err := os.Stat(binPath)
-	if err != nil || info.IsDir() {
+	binPath, info, err := findBinaryPath("crybaby-agent.exe")
+	if err != nil {
 		jsonResponse(w, http.StatusNotFound, map[string]string{
 			"error": "Agent binary not found in bin/crybaby-agent.exe. Please build it first on controller via: GOOS=windows GOARCH=amd64 go build -o bin/crybaby-agent.exe ./cmd/agent",
 		})
@@ -547,6 +578,214 @@ func (s *Server) handleServeAgentBinary(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", `attachment; filename="crybaby-agent.exe"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	http.ServeFile(w, r, binPath)
+}
+
+func (s *Server) handleServeLinuxAgentBinary(w http.ResponseWriter, r *http.Request) {
+	binPath, info, err := findBinaryPath("crybaby-agent-linux")
+	if err != nil {
+		jsonResponse(w, http.StatusNotFound, map[string]string{
+			"error": "Linux agent binary not found in bin/crybaby-agent-linux. Please build it first on controller via: GOOS=linux GOARCH=amd64 go build -o bin/crybaby-agent-linux ./cmd/agent",
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="crybaby-agent-linux"`)
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	http.ServeFile(w, r, binPath)
+}
+
+func (s *Server) handleWebInstallerPS1(w http.ResponseWriter, r *http.Request) {
+	host := s.resolveControllerHost(r)
+	controllerURL := fmt.Sprintf("http://%s", host)
+
+	script := fmt.Sprintf(`# ============================================================
+# CRYBABY CLUSTER - 1-CLICK SERVER NODE INSTALLER (POWERSHELL)
+# ============================================================
+$ErrorActionPreference = "Stop"
+
+# 1. Self-Elevate to Administrator (UAC) if not already elevated
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "[ELEVASI] Meminta izin Administrator (UAC)..." -ForegroundColor Yellow
+    Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command "& { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm %s/install | iex }"' -Verb RunAs
+    exit
+}
+
+Write-Host "=======================================================" -ForegroundColor Cyan
+Write-Host "      CRYBABY CLUSTER - 1-CLICK NODE INSTALLER         " -ForegroundColor Cyan
+Write-Host "=======================================================" -ForegroundColor Cyan
+Write-Host "Controller URL  : %s" -ForegroundColor Green
+Write-Host "Target Directory: $env:ProgramFiles\Crybaby" -ForegroundColor Green
+Write-Host ""
+
+$TargetDir = "$env:ProgramFiles\Crybaby"
+if (-not (Test-Path $TargetDir)) {
+    New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
+}
+
+# 2. Download crybaby-agent.exe
+Write-Host "[1/6] Mengunduh biner crybaby-agent.exe dari Controller..." -ForegroundColor Yellow
+$AgentExePath = "$TargetDir\crybaby-agent.exe"
+try {
+    Invoke-WebRequest -Uri "%s/api/v1/binaries/crybaby-agent.exe" -OutFile $AgentExePath -UseBasicParsing
+    Write-Host "      [OK] crybaby-agent.exe berhasil diunduh." -ForegroundColor Green
+} catch {
+    Write-Host "      [ERROR] Gagal mengunduh biner agent: $_" -ForegroundColor Red
+    exit 1
+}
+
+# 3. Write crybaby-config.json
+Write-Host "[2/6] Menulis konfigurasi node cluster..." -ForegroundColor Yellow
+$ConfigJson = @"
+{
+  "controller_url": "%s",
+  "cluster_token": "%s",
+  "cluster_name": "Crybaby-Primary-Cluster",
+  "created_at": "$(Get-Date -Format s)Z"
+}
+"@
+Set-Content -Path "$TargetDir\crybaby-config.json" -Value $ConfigJson -Encoding UTF8
+Write-Host "      [OK] crybaby-config.json tersimpan." -ForegroundColor Green
+
+# 4. Windows Power Configuration (Anti-Sleep & Server Mode)
+Write-Host "[3/6] Mengonfigurasi skema daya Windows (Anti-Sleep & Server Mode)..." -ForegroundColor Yellow
+powercfg -change -standby-timeout-ac 0 2>$null
+powercfg -change -hibernate-timeout-ac 0 2>$null
+powercfg -change -monitor-timeout-ac 15 2>$null
+powercfg -setacvalueindex SCHEME_CURRENT SUB_BUTTONS PBUTTONACTION 0 2>$null
+powercfg -setactive SCHEME_CURRENT 2>$null
+Write-Host "      [OK] Skema daya diatur ke Always-On Server Mode." -ForegroundColor Green
+
+# 5. Windows Firewall & Network Profile
+Write-Host "[4/6] Mengonfigurasi Windows Firewall & Profil Jaringan LAN..." -ForegroundColor Yellow
+Set-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue 2>$null
+netsh advfirewall firewall delete rule name="Crybaby Agent RPC" 2>$null
+netsh advfirewall firewall add rule name="Crybaby Agent RPC" dir=in action=allow protocol=TCP localport=8081 profile=any description="Crybaby Cluster RPC & WebSocket" 2>$null
+netsh advfirewall firewall delete rule name="Crybaby WireGuard Mesh" 2>$null
+netsh advfirewall firewall add rule name="Crybaby WireGuard Mesh" dir=in action=allow protocol=UDP localport=51820 profile=any description="Crybaby P2P Mesh Fabric" 2>$null
+netsh advfirewall firewall set rule name="File and Printer Sharing (Echo Request - ICMPv4-In)" new enable=yes 2>$null
+Write-Host "      [OK] Port RPC 8081, WireGuard 51820, dan ICMP Ping dibuka." -ForegroundColor Green
+
+# 6. Windows Update (Anti-Auto Reboot)
+Write-Host "[5/6] Mengunci kebijakan Windows Update (Anti-Auto Reboot)..." -ForegroundColor Yellow
+New-Item -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force -ErrorAction SilentlyContinue | Out-Null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord -Force 2>$null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AUOptions" -Value 3 -Type DWord -Force 2>$null
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name "AlwaysAutoRebootAtScheduledTime" -Value 0 -Type DWord -Force 2>$null
+Write-Host "      [OK] Windows Update auto-reboot dicegah." -ForegroundColor Green
+
+# 7. Check & Enable Hyper-V
+Write-Host "[6/6] Memeriksa Hyper-V dan mendaftarkan Windows Service..." -ForegroundColor Yellow
+try {
+    $edition = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").EditionID
+    if ($edition -like "*Home*") {
+        $packages = Get-ChildItem -Path "$env:SystemRoot\servicing\Packages\*Hyper-V*.mum" -ErrorAction SilentlyContinue
+        if ($packages) {
+            foreach ($pkg in $packages) { dism /online /norestart /add-package:"$($pkg.FullName)" 2>$null | Out-Null }
+            dism /online /enable-feature /featurename:Microsoft-Hyper-V-All /norestart /all 2>$null | Out-Null
+        }
+    } else {
+        $hv = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -ErrorAction SilentlyContinue
+        if ($hv -and $hv.State -ne "Enabled") {
+            Write-Host "      Mengaktifkan Microsoft-Hyper-V..." -ForegroundColor Yellow
+            Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All -NoRestart -ErrorAction SilentlyContinue | Out-Null
+        }
+    }
+} catch {}
+
+sc.exe stop CrybabyAgent 2>$null
+sc.exe delete CrybabyAgent 2>$null
+Start-Sleep -Seconds 1
+$binCmd = '"' + $AgentExePath + '" -config "' + $TargetDir + '\crybaby-config.json"'
+sc.exe create CrybabyAgent binPath= $binCmd start= auto DisplayName= "Crybaby Cluster Agent" 2>$null
+sc.exe description CrybabyAgent "Crybaby Distributed Windows 11 Cluster & Hyper-V Manager Service" 2>$null
+sc.exe failure CrybabyAgent reset= 60 actions= restart/5000/restart/10000/restart/30000 2>$null
+sc.exe start CrybabyAgent 2>$null
+Write-Host "      [OK] Windows Service CrybabyAgent terpasang dan aktif!" -ForegroundColor Green
+
+Write-Host ""
+Write-Host "=======================================================" -ForegroundColor Green
+Write-Host "[SUCCESS] PC Server resmi bergabung ke Crybaby Cluster!" -ForegroundColor Green
+Write-Host "Agent Service : Berjalan otomatis saat Windows booting" -ForegroundColor Green
+Write-Host "Status Node   : Periksa di Controller Dashboard (%s)" -ForegroundColor Green
+Write-Host "=======================================================" -ForegroundColor Green
+Write-Host ""
+`, controllerURL, controllerURL, controllerURL, controllerURL, s.clusterToken, controllerURL)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(script))
+}
+
+func (s *Server) handleWebInstallerSH(w http.ResponseWriter, r *http.Request) {
+	host := s.resolveControllerHost(r)
+	controllerURL := fmt.Sprintf("http://%s", host)
+
+	script := fmt.Sprintf(`#!/usr/bin/env bash
+# ============================================================
+# CRYBABY CLUSTER - 1-CLICK LINUX NODE INSTALLER
+# ============================================================
+set -euo pipefail
+
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERROR] Harap jalankan script ini sebagai root (sudo bash)." >&2
+    exit 1
+fi
+
+echo "======================================================="
+echo "      CRYBABY CLUSTER - 1-CLICK LINUX NODE INSTALLER   "
+echo "======================================================="
+echo "Controller Target: %s"
+echo ""
+
+mkdir -p /usr/local/bin /etc/crybaby /var/log/crybaby
+
+echo "[1/4] Mengunduh biner crybaby-agent..."
+curl -fsSL "%s/api/v1/binaries/crybaby-agent-linux" -o /usr/local/bin/crybaby-agent
+chmod +x /usr/local/bin/crybaby-agent
+
+echo "[2/4] Menulis konfigurasi cluster..."
+cat <<'EOF' > /etc/crybaby/crybaby-config.json
+{
+  "controller_url": "%s",
+  "cluster_token": "%s",
+  "cluster_name": "Crybaby-Primary-Cluster"
+}
+EOF
+
+echo "[3/4] Mendaftarkan systemd service..."
+cat <<'EOF' > /etc/systemd/system/crybaby-agent.service
+[Unit]
+Description=Crybaby Cluster Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/crybaby-agent -config /etc/crybaby/crybaby-config.json
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable crybaby-agent
+systemctl restart crybaby-agent
+
+echo "[4/4] Verifikasi status..."
+echo "======================================================="
+echo "[SUCCESS] Linux Server resmi bergabung ke Crybaby Cluster!"
+echo "Status service: systemctl status crybaby-agent"
+echo "Dashboard     : %s"
+echo "======================================================="
+`, controllerURL, controllerURL, controllerURL, s.clusterToken, controllerURL)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(script))
 }
 
 func (s *Server) handleListISOs(w http.ResponseWriter, r *http.Request) {
@@ -607,18 +846,7 @@ func jsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
 }
 
 func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
-	host := r.URL.Query().Get("host")
-	if host == "" {
-		host = r.Host
-	}
-	if host == "" || strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") {
-		lanIP := getOutboundIP()
-		if lanIP != "" {
-			host = lanIP + ":" + s.port
-		} else if host == "" {
-			host = "127.0.0.1:" + s.port
-		}
-	}
+	host := s.resolveControllerHost(r)
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"crybaby-usb-pack.zip\"")
@@ -640,28 +868,28 @@ func (s *Server) handleUSBZip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. scripts/install.bat
-	if batData, err := os.ReadFile("scripts/install.bat"); err == nil {
+	if _, batData, err := findFileCandidate("scripts/install.bat", "../../scripts/install.bat", "../scripts/install.bat"); err == nil {
 		if fBat, err := zw.Create("install.bat"); err == nil {
 			_, _ = fBat.Write(batData)
 		}
 	}
 
 	// 3. scripts/enable-hyperv.ps1
-	if psData, err := os.ReadFile("scripts/enable-hyperv.ps1"); err == nil {
+	if _, psData, err := findFileCandidate("scripts/enable-hyperv.ps1", "../../scripts/enable-hyperv.ps1", "../scripts/enable-hyperv.ps1"); err == nil {
 		if fPs, err := zw.Create("enable-hyperv.ps1"); err == nil {
 			_, _ = fPs.Write(psData)
 		}
 	}
 
 	// 4. bin/crybaby-agent.exe
-	if exeData, err := os.ReadFile("bin/crybaby-agent.exe"); err == nil {
+	if _, exeData, err := findFileCandidate("bin/crybaby-agent.exe", "../../bin/crybaby-agent.exe", "../bin/crybaby-agent.exe"); err == nil {
 		if fExe, err := zw.Create("crybaby-agent.exe"); err == nil {
 			_, _ = fExe.Write(exeData)
 		}
 	}
 
 	// 5. scripts/uninstall.bat
-	if unData, err := os.ReadFile("scripts/uninstall.bat"); err == nil {
+	if _, unData, err := findFileCandidate("scripts/uninstall.bat", "../../scripts/uninstall.bat", "../scripts/uninstall.bat"); err == nil {
 		if fUn, err := zw.Create("uninstall.bat"); err == nil {
 			_, _ = fUn.Write(unData)
 		}

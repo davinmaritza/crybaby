@@ -1,11 +1,14 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/davinmaritza/crybaby/pkg/auth"
@@ -29,8 +32,8 @@ func TestServeAgentBinary(t *testing.T) {
 	s.handleServeAgentBinary(rr, req)
 
 	// In test environment, bin/crybaby-agent.exe may or may not exist
-	binPath := filepath.Join(".", "bin", "crybaby-agent.exe")
-	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+	_, _, err := findBinaryPath("crybaby-agent.exe")
+	if err != nil {
 		if rr.Code != http.StatusNotFound {
 			t.Errorf("expected 404 when binary missing, got %d", rr.Code)
 		}
@@ -140,4 +143,103 @@ func TestClusterHistoryEndpoint(t *testing.T) {
 		t.Errorf("unexpected points data: %+v", points)
 	}
 }
+
+func TestWebInstallerEndpoints(t *testing.T) {
+	reg := cluster.NewRegistry("cluster-token-xyz", "")
+	authInstance := auth.NewAuthenticator("pass123", "secret123")
+	s := &Server{
+		registry:     reg,
+		auth:         authInstance,
+		clusterToken: "cluster-token-xyz",
+		port:         "8080",
+	}
+
+	// 1. Test GET /install (PowerShell script)
+	reqPS1 := httptest.NewRequest(http.MethodGet, "/install?host=192.168.1.50:8080", nil)
+	rrPS1 := httptest.NewRecorder()
+	s.handleWebInstallerPS1(rrPS1, reqPS1)
+
+	if rrPS1.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /install, got %d", rrPS1.Code)
+	}
+	bodyPS1 := rrPS1.Body.String()
+	if !strings.Contains(bodyPS1, "192.168.1.50:8080") {
+		t.Errorf("expected controller host in ps1 output")
+	}
+	if !strings.Contains(bodyPS1, "cluster-token-xyz") {
+		t.Errorf("expected cluster token in ps1 output")
+	}
+	if !strings.Contains(bodyPS1, "CrybabyAgent") || !strings.Contains(bodyPS1, "powercfg") {
+		t.Errorf("expected service and power configuration commands in ps1 output")
+	}
+
+	// 2. Test GET /install.sh (Linux bash script)
+	reqSH := httptest.NewRequest(http.MethodGet, "/install.sh?host=192.168.1.50:8080", nil)
+	rrSH := httptest.NewRecorder()
+	s.handleWebInstallerSH(rrSH, reqSH)
+
+	if rrSH.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from /install.sh, got %d", rrSH.Code)
+	}
+	bodySH := rrSH.Body.String()
+	if !strings.Contains(bodySH, "192.168.1.50:8080") {
+		t.Errorf("expected controller host in sh output")
+	}
+	if !strings.Contains(bodySH, "cluster-token-xyz") {
+		t.Errorf("expected cluster token in sh output")
+	}
+	if !strings.Contains(bodySH, "systemctl restart crybaby-agent") {
+		t.Errorf("expected systemctl commands in sh output")
+	}
+
+	// 3. Test GET /api/v1/binaries/crybaby-agent-linux
+	reqLinuxBin := httptest.NewRequest(http.MethodGet, "/api/v1/binaries/crybaby-agent-linux", nil)
+	rrLinuxBin := httptest.NewRecorder()
+	s.handleServeLinuxAgentBinary(rrLinuxBin, reqLinuxBin)
+
+	_, _, err := findBinaryPath("crybaby-agent-linux")
+	if err != nil {
+		if rrLinuxBin.Code != http.StatusNotFound {
+			t.Errorf("expected 404 when linux binary missing, got %d", rrLinuxBin.Code)
+		}
+	} else {
+		if rrLinuxBin.Code != http.StatusOK {
+			t.Errorf("expected 200 when linux binary exists, got %d", rrLinuxBin.Code)
+		}
+	}
+
+	// 4. Test GET /api/v1/provision/usb-zip
+	reqZip := httptest.NewRequest(http.MethodGet, "/api/v1/provision/usb-zip?host=192.168.1.50:8080", nil)
+	rrZip := httptest.NewRecorder()
+	s.handleUSBZip(rrZip, reqZip)
+
+	if rrZip.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK from handleUSBZip, got %d", rrZip.Code)
+	}
+	if rrZip.Header().Get("Content-Type") != "application/zip" {
+		t.Errorf("expected application/zip header, got %s", rrZip.Header().Get("Content-Type"))
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(rrZip.Body.Bytes()), int64(rrZip.Body.Len()))
+	if err != nil {
+		t.Fatalf("failed to parse usb pack zip: %v", err)
+	}
+	expectedFiles := map[string]bool{
+		"crybaby-config.json": false,
+		"install.bat":         false,
+		"uninstall.bat":       false,
+		"enable-hyperv.ps1":   false,
+	}
+	for _, f := range zipReader.File {
+		if _, ok := expectedFiles[f.Name]; ok {
+			expectedFiles[f.Name] = true
+		}
+	}
+	for fName, found := range expectedFiles {
+		if !found {
+			t.Errorf("expected file %s in usb-pack.zip", fName)
+		}
+	}
+}
+
 

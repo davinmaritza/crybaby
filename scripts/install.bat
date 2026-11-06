@@ -6,25 +6,42 @@ echo          CRYBABY CLUSTER - 1-CLICK NODE INSTALLER
 echo =======================================================
 echo.
 
-:: 1. Check Administrator Privileges
+:: 1. Check Administrator Privileges & Auto-Elevate (UAC)
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    echo [ERROR] Harap jalankan installer ini sebagai Administrator!
-    echo Klik kanan install.bat -> "Run as administrator"
-    pause
-    exit /b 1
+    echo [ELEVASI] Meminta hak Administrator (UAC)...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
 )
+
+:: Pastikan working directory adalah folder tempat script berada (meskipun di-elevate UAC)
+cd /d "%~dp0"
 
 echo [1/5] Memeriksa file installer...
 if not exist "%~dp0crybaby-agent.exe" (
-    echo [ERROR] crybaby-agent.exe tidak ditemukan di folder flashdisk ini!
-    pause
-    exit /b 1
+    echo [WARNING] crybaby-agent.exe tidak ditemukan di folder lokal.
+    echo Mencoba mengunduh langsung dari Controller...
+    set "CONTROLLER_URL="
+    if exist "%~dp0crybaby-config.json" (
+        for /f "tokens=2 delims=:, " %%A in ('findstr /i "controller_url" "%~dp0crybaby-config.json"') do (
+            set "CONTROLLER_URL=%%~A"
+        )
+    )
+    if "!CONTROLLER_URL!"=="" (
+        set /p CONTROLLER_URL="Masukkan URL Controller (contoh http://192.168.100.168:8080): "
+    )
+    echo Mengunduh crybaby-agent.exe dari !CONTROLLER_URL!/api/v1/binaries/crybaby-agent.exe ...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -Uri '!CONTROLLER_URL!/api/v1/binaries/crybaby-agent.exe' -OutFile '%~dp0crybaby-agent.exe' -UseBasicParsing"
+    if not exist "%~dp0crybaby-agent.exe" (
+        echo [ERROR] Gagal mengunduh crybaby-agent.exe! Periksa koneksi ke Controller.
+        pause
+        exit /b 1
+    )
 )
 if not exist "%~dp0crybaby-config.json" (
-    echo [ERROR] crybaby-config.json tidak ditemukan di folder flashdisk ini!
-    pause
-    exit /b 1
+    echo [WARNING] crybaby-config.json tidak ditemukan.
+    set /p CTRL_HOST="Masukkan IP:Port Controller (contoh 192.168.100.168:8080): "
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "(Invoke-WebRequest -Uri 'http://!CTRL_HOST!/api/v1/provision/usb-profile' -UseBasicParsing).Content | Out-File -Encoding utf8 '%~dp0crybaby-config.json'"
 )
 
 echo [2/5] Memasang Crybaby Agent ke %%ProgramFiles%%\Crybaby...
@@ -76,7 +93,11 @@ sc description CrybabyAgent "Crybaby Distributed Windows 11 Cluster & Hyper-V Ma
 sc failure CrybabyAgent reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul
 sc start CrybabyAgent >nul
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0enable-hyperv.ps1"
+if exist "%~dp0enable-hyperv.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0enable-hyperv.ps1"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $f = Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -ErrorAction SilentlyContinue; if ($f -and $f.State -ne 'Enabled') { Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All -NoRestart -ErrorAction SilentlyContinue } } catch {}"
+)
 
 echo.
 echo =======================================================

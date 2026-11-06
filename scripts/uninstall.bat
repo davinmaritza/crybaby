@@ -6,14 +6,16 @@ echo          CRYBABY CLUSTER - 1-CLICK UNINSTALLER
 echo =======================================================
 echo.
 
-:: 1. Check Administrator Privileges
+:: 1. Check Administrator Privileges & Auto-Elevate (UAC)
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    echo [ERROR] Harap jalankan uninstaller ini sebagai Administrator!
-    echo Klik kanan uninstall.bat -> "Run as administrator"
-    pause
-    exit /b 1
+    echo [ELEVASI] Meminta hak Administrator (UAC)...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
 )
+
+:: Pastikan working directory adalah folder tempat script berada
+cd /d "%~dp0"
 
 echo [1/5] Menghentikan dan menghapus Windows Service (CrybabyAgent)...
 sc stop CrybabyAgent >nul 2>&1
