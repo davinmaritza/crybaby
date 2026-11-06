@@ -675,11 +675,12 @@ const dashboardHTML = `<!DOCTYPE html>
         }
 
         function updateInstallerHost(hostVal) {
+            const proto = window.location.protocol || 'http:';
             const host = (hostVal || window.location.host || '127.0.0.1:8080').trim();
             const ps1Elem = document.getElementById('ps1CommandText');
-            if (ps1Elem) ps1Elem.innerText = 'irm http://' + host + '/install | iex';
+            if (ps1Elem) ps1Elem.innerText = 'irm ' + proto + '//' + host + '/install | iex';
             const shElem = document.getElementById('shCommandText');
-            if (shElem) shElem.innerText = 'curl -sSL http://' + host + '/install.sh | sudo bash';
+            if (shElem) shElem.innerText = 'curl -sSL ' + proto + '//' + host + '/install.sh | sudo bash';
         }
 
         function copyCommand(elemId, btn) {
@@ -702,19 +703,22 @@ const dashboardHTML = `<!DOCTYPE html>
         }
 
         async function openUSBModal() { 
+            document.getElementById('usbModal').classList.remove('hidden'); 
             let detected = window.location.host;
+            const hostInput = document.getElementById('usbHostInput');
+            if (hostInput && !hostInput.value) hostInput.value = detected;
+            updateInstallerHost(hostInput ? hostInput.value : detected);
+
             try {
                 const res = await fetchJson('/api/v1/provision/usb-profile');
                 if (res && res.detected_host) {
                     detected = res.detected_host;
+                    if (hostInput && (!hostInput.value || hostInput.value === window.location.host)) {
+                        hostInput.value = detected;
+                        updateInstallerHost(detected);
+                    }
                 }
             } catch (e) {}
-
-            const hostInput = document.getElementById('usbHostInput');
-            if (hostInput) hostInput.value = detected;
-            updateInstallerHost(detected);
-
-            document.getElementById('usbModal').classList.remove('hidden'); 
         }
         function closeUSBModal() { document.getElementById('usbModal').classList.add('hidden'); }
         function downloadUSBPack() {
@@ -1054,24 +1058,24 @@ const dashboardHTML = `<!DOCTYPE html>
 
         function downloadRdp(vmName, ip) {
             const rdpContent = [
-                \"full address:s:\" + ip + \":3389\",
-                \"prompt for credentials:i:1\",
-                \"administrative session:i:1\",
-                \"screen mode id:i:2\",
-                \"use multimon:i:0\",
-                \"desktopwidth:i:1920\",
-                \"desktopheight:i:1080\",
-                \"session bpp:i:32\",
-                \"compression:i:1\",
-                \"keyboardhook:i:2\",
-                \"audiomode:i:0\"
-            ].join(\"\\r\\n\");
+                'full address:s:' + ip + ':3389',
+                'prompt for credentials:i:1',
+                'administrative session:i:1',
+                'screen mode id:i:2',
+                'use multimon:i:0',
+                'desktopwidth:i:1920',
+                'desktopheight:i:1080',
+                'session bpp:i:32',
+                'compression:i:1',
+                'keyboardhook:i:2',
+                'audiomode:i:0'
+            ].join('\r\n');
 
-            const blob = new Blob([rdpContent], { type: \"application/x-rdp\" });
+            const blob = new Blob([rdpContent], { type: 'application/x-rdp' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement(\"a\");
+            const a = document.createElement('a');
             a.href = url;
-            a.download = (vmName || \"crybaby-vm\") + \".rdp\";
+            a.download = (vmName || 'crybaby-vm') + '.rdp';
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
