@@ -704,15 +704,42 @@ try {
     }
 } catch {}
 
+Get-Process -Name "crybaby-agent" -ErrorAction SilentlyContinue | Stop-Process -Force 2>$null
 sc.exe stop CrybabyAgent 2>$null
 sc.exe delete CrybabyAgent 2>$null
 Start-Sleep -Seconds 1
-$binCmd = '"' + $AgentExePath + '" -config "' + $TargetDir + '\crybaby-config.json"'
-sc.exe create CrybabyAgent binPath= $binCmd start= auto DisplayName= "Crybaby Cluster Agent" 2>$null
-sc.exe description CrybabyAgent "Crybaby Distributed Windows 11 Cluster & Hyper-V Manager Service" 2>$null
-sc.exe failure CrybabyAgent reset= 60 actions= restart/5000/restart/10000/restart/30000 2>$null
-sc.exe start CrybabyAgent 2>$null
-Write-Host "      [OK] Windows Service CrybabyAgent terpasang dan aktif!" -ForegroundColor Green
+
+$TaskName = "CrybabyAgent"
+schtasks.exe /delete /tn $TaskName /f 2>$null
+
+try {
+    $TaskAction = New-ScheduledTaskAction -Execute $AgentExePath -Argument ('-config "' + $TargetDir + '\crybaby-config.json"') -WorkingDirectory $TargetDir
+    $TaskTrigger = New-ScheduledTaskTrigger -AtStartup
+    $TaskPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $TaskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+    Register-ScheduledTask -TaskName $TaskName -Action $TaskAction -Trigger $TaskTrigger -Principal $TaskPrincipal -Settings $TaskSettings -Force | Out-Null
+    Write-Host "      [OK] Daemon Startup Task CrybabyAgent terdaftar (AtStartup / SYSTEM)." -ForegroundColor Green
+} catch {
+    $legacyTr = '\"' + $AgentExePath + '\" -config \"' + $TargetDir + '\crybaby-config.json\"'
+    schtasks.exe /create /tn $TaskName /tr $legacyTr /sc onstart /ru "SYSTEM" /rl HIGHEST /f 2>$null | Out-Null
+    Write-Host "      [OK] Startup Task CrybabyAgent terdaftar via schtasks." -ForegroundColor Green
+}
+
+# Daftarkan Registry Run sebagai persistensi sekunder
+$runVal = '"' + $AgentExePath + '" -config "' + $TargetDir + '\crybaby-config.json"'
+New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "CrybabyAgent" -Value $runVal -PropertyType String -Force 2>$null | Out-Null
+
+# Jalankan proses Agent di background sekarang juga
+Start-Process -FilePath $AgentExePath -ArgumentList ('-config "' + $TargetDir + '\crybaby-config.json"') -WorkingDirectory $TargetDir -WindowStyle Hidden
+Start-Sleep -Seconds 2
+
+$proc = Get-Process -Name "crybaby-agent" -ErrorAction SilentlyContinue
+if ($proc) {
+    Write-Host "      [OK] Agent aktif berjalan di background (PID $($proc.Id))!" -ForegroundColor Green
+} else {
+    Write-Host "      [INFO] Memulai via Scheduled Task..." -ForegroundColor Yellow
+    Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 Write-Host "=======================================================" -ForegroundColor Green

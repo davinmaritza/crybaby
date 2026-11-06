@@ -17,9 +17,12 @@ if %errorLevel% neq 0 (
 :: Pastikan working directory adalah folder tempat script berada
 cd /d "%~dp0"
 
-echo [1/5] Menghentikan dan menghapus Windows Service (CrybabyAgent)...
+echo [1/5] Menghentikan dan menghapus Daemon (CrybabyAgent)...
+taskkill /f /im crybaby-agent.exe >nul 2>&1
 sc stop CrybabyAgent >nul 2>&1
 sc delete CrybabyAgent >nul 2>&1
+schtasks /delete /tn CrybabyAgent /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v CrybabyAgent /f >nul 2>&1
 
 echo [2/5] Menghapus aturan Windows Firewall...
 netsh advfirewall firewall delete rule name="Crybaby Agent RPC" >nul 2>&1

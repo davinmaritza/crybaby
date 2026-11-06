@@ -83,15 +83,18 @@ reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v NoAutoReb
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v AUOptions /t REG_DWORD /d 3 /f >nul 2>&1
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU" /v AlwaysAutoRebootAtScheduledTime /t REG_DWORD /d 0 /f >nul 2>&1
 
-echo [6/6] Mendaftarkan Windows Service (CrybabyAgent) & Memeriksa Hyper-V...
+echo [6/6] Mendaftarkan Daemon Startup Task (CrybabyAgent) & Memeriksa Hyper-V...
+taskkill /f /im crybaby-agent.exe >nul 2>&1
 sc stop CrybabyAgent >nul 2>&1
 sc delete CrybabyAgent >nul 2>&1
+schtasks /delete /tn CrybabyAgent /f >nul 2>&1
 timeout /t 1 /nobreak >nul
 
-sc create CrybabyAgent binPath= "\"%TARGET_DIR%\crybaby-agent.exe\" -config \"%TARGET_DIR%\crybaby-config.json\"" start= auto DisplayName= "Crybaby Cluster Agent" >nul
-sc description CrybabyAgent "Crybaby Distributed Windows 11 Cluster & Hyper-V Manager Service" >nul
-sc failure CrybabyAgent reset= 60 actions= restart/5000/restart/10000/restart/30000 >nul
-sc start CrybabyAgent >nul
+schtasks /create /tn CrybabyAgent /tr "\"%TARGET_DIR%\crybaby-agent.exe\" -config \"%TARGET_DIR%\crybaby-config.json\"" /sc onstart /ru "SYSTEM" /rl HIGHEST /f >nul 2>&1
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v CrybabyAgent /t REG_SZ /d "\"%TARGET_DIR%\crybaby-agent.exe\" -config \"%TARGET_DIR%\crybaby-config.json\"" /f >nul 2>&1
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%TARGET_DIR%\crybaby-agent.exe' -ArgumentList '-config \"%TARGET_DIR%\crybaby-config.json\"' -WorkingDirectory '%TARGET_DIR%' -WindowStyle Hidden" >nul 2>&1
+echo       [OK] Crybaby Agent aktif berjalan di background!
 
 if exist "%~dp0enable-hyperv.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0enable-hyperv.ps1"
