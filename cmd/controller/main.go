@@ -612,7 +612,7 @@ func (s *Server) handleWebInstallerPS1(w http.ResponseWriter, r *http.Request) {
 	script := fmt.Sprintf(`# ============================================================
 # CRYBABY CLUSTER - 1-CLICK SERVER NODE INSTALLER (POWERSHELL)
 # ============================================================
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 # 1. Self-Elevate to Administrator (UAC) if not already elevated
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -704,13 +704,23 @@ try {
     }
 } catch {}
 
-Get-Process -Name "crybaby-agent" -ErrorAction SilentlyContinue | Stop-Process -Force 2>$null
-sc.exe stop CrybabyAgent 2>$null
-sc.exe delete CrybabyAgent 2>$null
-Start-Sleep -Seconds 1
+try { Get-Process -Name "crybaby-agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue } catch {}
+
+try {
+    $oldSvc = Get-Service -Name "CrybabyAgent" -ErrorAction SilentlyContinue
+    if ($oldSvc) {
+        Stop-Service -Name "CrybabyAgent" -Force -ErrorAction SilentlyContinue
+        sc.exe delete CrybabyAgent 2>&1 | Out-Null
+    }
+} catch {}
 
 $TaskName = "CrybabyAgent"
-schtasks.exe /delete /tn $TaskName /f 2>$null
+try {
+    $oldTask = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($oldTask) {
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
+} catch {}
 
 try {
     $TaskAction = New-ScheduledTaskAction -Execute $AgentExePath -Argument ('-config "' + $TargetDir + '\crybaby-config.json"') -WorkingDirectory $TargetDir
@@ -721,24 +731,27 @@ try {
     Write-Host "      [OK] Daemon Startup Task CrybabyAgent terdaftar (AtStartup / SYSTEM)." -ForegroundColor Green
 } catch {
     $legacyTr = '\"' + $AgentExePath + '\" -config \"' + $TargetDir + '\crybaby-config.json\"'
-    schtasks.exe /create /tn $TaskName /tr $legacyTr /sc onstart /ru "SYSTEM" /rl HIGHEST /f 2>$null | Out-Null
+    schtasks.exe /create /tn $TaskName /tr $legacyTr /sc onstart /ru "SYSTEM" /rl HIGHEST /f 2>&1 | Out-Null
     Write-Host "      [OK] Startup Task CrybabyAgent terdaftar via schtasks." -ForegroundColor Green
 }
 
 # Daftarkan Registry Run sebagai persistensi sekunder
-$runVal = '"' + $AgentExePath + '" -config "' + $TargetDir + '\crybaby-config.json"'
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "CrybabyAgent" -Value $runVal -PropertyType String -Force 2>$null | Out-Null
+try {
+    $runVal = '"' + $AgentExePath + '" -config "' + $TargetDir + '\crybaby-config.json"'
+    New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "CrybabyAgent" -Value $runVal -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
+} catch {}
 
 # Jalankan proses Agent di background sekarang juga
+Write-Host "      Memulai proses Crybaby Agent..." -ForegroundColor Yellow
 Start-Process -FilePath $AgentExePath -ArgumentList ('-config "' + $TargetDir + '\crybaby-config.json"') -WorkingDirectory $TargetDir -WindowStyle Hidden
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 
 $proc = Get-Process -Name "crybaby-agent" -ErrorAction SilentlyContinue
 if ($proc) {
-    Write-Host "      [OK] Agent aktif berjalan di background (PID $($proc.Id))!" -ForegroundColor Green
+    Write-Host "      [OK] Crybaby Agent aktif berjalan di background (PID $($proc.Id))!" -ForegroundColor Green
 } else {
     Write-Host "      [INFO] Memulai via Scheduled Task..." -ForegroundColor Yellow
-    Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    try { Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch {}
 }
 
 Write-Host ""
